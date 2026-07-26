@@ -46,7 +46,7 @@
 #include "../core/aindex.h"
 #include "../core/aver.h"
 
-static const char verstag[] __attribute__((used)) = "$VER: amipkg-mui 0.4 (25.7.2026)";
+static const char verstag[] __attribute__((used)) = "$VER: amipkg-mui 0.4.1 (26.7.2026)";
 
 #ifndef MAKE_ID
 #define MAKE_ID(a,b,c,d) ((ULONG)(a)<<24 | (ULONG)(b)<<16 | (ULONG)(c)<<8 | (ULONG)(d))
