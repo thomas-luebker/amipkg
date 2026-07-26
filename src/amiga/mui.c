@@ -46,7 +46,7 @@
 #include "../core/aindex.h"
 #include "../core/aver.h"
 
-static const char verstag[] __attribute__((used)) = "$VER: amipkg-mui 0.4.1 (26.7.2026)";
+static const char verstag[] __attribute__((used)) = "$VER: amipkg-mui 0.4.2 (26.7.2026)";
 
 #ifndef MAKE_ID
 #define MAKE_ID(a,b,c,d) ((ULONG)(a)<<24 | (ULONG)(b)<<16 | (ULONG)(c)<<8 | (ULONG)(d))
@@ -931,9 +931,7 @@ static int gui_run(void)
                   "(after `amipkg install mui38` you must REBOOT once)");
     }
 
-    if (!build_app()) { printf("amipkg-mui: could not create the application.\n"); goto out; }
-
-    /* 250 ms heartbeat for async-operation polling. */
+    /* Timer heartbeat first (independent of the MUI tree). */
 #ifndef NO_TIMER
     tport = CreateMsgPort();
     if (tport) {
@@ -949,32 +947,50 @@ static int gui_run(void)
         }
     }
 #endif
-
     trace("timer heartbeat set up");
-#ifndef NO_MODEL
-    trace("rebuild_list: loading receipts + catalog into the list");
-    rebuild_list();
-    trace("rebuild_list done");
-#else
-    set_status("NO_MODEL variant - list deliberately empty.");
-#endif
-    update_action_state();
-    trace("action state set, opening window");
-    set(win, MUIA_Window_Open, TRUE);
+
+    /* Build + open, with ONE self-heal retry: every pre-0.4.1 build ran with
+     * garbage tag lists (the inline-varargs compiler bug) and MUI saves
+     * application prefs on exit - a poisoned ENV:MUI/AMIPKG.cfg from those
+     * runs can make even a correct build refuse to open its window. On
+     * failure we delete OUR OWN prefs file and rebuild once. */
     {
+        int attempt;
         ULONG opened = 0;
-        get(win, MUIA_Window_Open, &opened);
-        if (!opened) {
-            char b[200];
-            snprintf(b, sizeof b,
-                     "window did NOT open. muimaster v%d.%d; chip free %ld KB, total free %ld KB. "
-                     "Usual causes: incomplete MUI install (no MUI: tree - reboot after installing MUI), "
-                     "broken MUI prefs, or a full/too-deep screen.",
-                     (int)MUIMasterBase->lib_Version, (int)MUIMasterBase->lib_Revision,
-                     (long)(AvailMem(MEMF_CHIP) / 1024), (long)(AvailMem(MEMF_ANY) / 1024));
-            trace(b);
-            goto out;
+        for (attempt = 0; attempt < 2 && !opened; attempt++) {
+            if (!build_app()) { printf("amipkg-mui: could not create the application.\n"); goto out; }
+#ifndef NO_MODEL
+            trace("rebuild_list: loading receipts + catalog into the list");
+            rebuild_list();
+            trace("rebuild_list done");
+#else
+            set_status("NO_MODEL variant - list deliberately empty.");
+#endif
+            update_action_state();
+            trace("action state set, opening window");
+            set(win, MUIA_Window_Open, TRUE);
+            get(win, MUIA_Window_Open, &opened);
+            if (!opened) {
+                char b[200];
+                snprintf(b, sizeof b,
+                         "window did NOT open (attempt %d). muimaster v%d.%d; chip free %ld KB, total free %ld KB.",
+                         attempt + 1,
+                         (int)MUIMasterBase->lib_Version, (int)MUIMasterBase->lib_Revision,
+                         (long)(AvailMem(MEMF_CHIP) / 1024), (long)(AvailMem(MEMF_ANY) / 1024));
+                trace(b);
+                if (attempt == 0) {
+                    trace("removing this app's MUI prefs (possibly saved by an earlier broken build), retrying once");
+                    MUI_DisposeObject(app); app = NULL;
+                    DeleteFile((STRPTR)"ENV:MUI/AMIPKG.cfg");
+                    DeleteFile((STRPTR)"ENVARC:MUI/AMIPKG.cfg");
+                } else {
+                    trace("still refused. Usual causes now: incomplete MUI install "
+                          "(no MUI: tree - reboot after installing MUI), broken global "
+                          "MUI prefs, or a full/too-deep screen.");
+                }
+            }
         }
+        if (!opened) goto out;
     }
 
     trace("window is open, entering main loop");
