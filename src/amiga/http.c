@@ -248,12 +248,12 @@ static int do_get(const char *url, FILE *out, long *bytes_out,
 
     if (resume_from > 0)
         snprintf(req, sizeof req,
-                 "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: amipkg/0.4.2\r\n"
+                 "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: amipkg/0.4.3\r\n"
                  "Range: bytes=%ld-\r\nConnection: close\r\n\r\n",
                  path, host, resume_from);
     else
         snprintf(req, sizeof req,
-                 "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: amipkg/0.4.2\r\n"
+                 "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: amipkg/0.4.3\r\n"
                  "Connection: close\r\n\r\n", path, host);
     if (net_write(ssl, sock, req, (long)strlen(req)) < 0) {
         printf("amipkg: send failed\n");

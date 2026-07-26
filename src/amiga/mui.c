@@ -46,7 +46,7 @@
 #include "../core/aindex.h"
 #include "../core/aver.h"
 
-static const char verstag[] __attribute__((used)) = "$VER: amipkg-mui 0.4.2 (26.7.2026)";
+static const char verstag[] __attribute__((used)) = "$VER: amipkg-mui 0.4.3 (26.7.2026)";
 
 #ifndef MAKE_ID
 #define MAKE_ID(a,b,c,d) ((ULONG)(a)<<24 | (ULONG)(b)<<16 | (ULONG)(c)<<8 | (ULONG)(d))
@@ -687,7 +687,7 @@ static void action_set_dir(void)
 static void action_about(void)
 {
     MUI_Request(app, win, 0, (char *)"About amipkg", (char *)"_OK",
-        "\033bamipkg-mui 0.4.2\033n\n\n"
+        "\033bamipkg-mui 0.4.3\033n\n\n"
         "The AmigaPKG package manager for AmigaOS 3.x.\n"
         "Browse, install, update, and remove software\n"
         "from the signed AmigaPKG catalog.\n\n"
@@ -895,7 +895,7 @@ static int gui_run(void)
     ULONG tsig = 0;
     int timer_ok = 0, rc = 20;
 
-    trace("start (0.4.2)");
+    trace("start (0.4.3)");
     amipkg_bridge_assigns();
     trace("assign bridge done");
 
