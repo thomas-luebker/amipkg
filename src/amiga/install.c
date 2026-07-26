@@ -19,6 +19,7 @@
 #include "../core/arun.h"
 #include "../core/arecipe.h"
 #include "../core/sha256.h"
+#include "../core/aver.h"
 #include "../core/store.h"
 
 #include <exec/execbase.h>
@@ -168,6 +169,52 @@ static void ensure_one(const char *path)
  * AMIPKG: assign exists after the bridge, but its cache/ and db/ sub-
  * drawers are not guaranteed present on every image - create them here so a
  * fetch/install never fails on a missing directory. */
+/* Self-seed the amipkg receipt: `check`/`upgrade` only manage what the
+ * receipt DB records, and skip-Install users (extract & start - the
+ * blessed flow since 0.4.5) had NO amipkg entry, so self-update looked
+ * "up to date" forever (tester report). Runs on every CLI start: appends
+ * the entry when missing, bumps it when this binary is NEWER than the
+ * recorded version (manual updates). Never touches files. */
+static void selfseed_receipt(void)
+{
+    static rcpt_installed inst[MAX_PKGS];
+    size_t n = load_installed(inst, MAX_PKGS), i;
+    long have = -1;
+    for (i = 0; i < n; i++)
+        if (strcmp(inst[i].id, "amipkg") == 0) { have = (long)i; break; }
+    if (have >= 0 && !aver_is_newer(AMIPKG_VERSION, inst[have].version))
+        return;
+    if (have < 0) {
+        FILE *f = fopen(amipkg_data_path("db/installed.txt"), "a");
+        if (f) { fprintf(f, "amipkg|%s|1|0\n", AMIPKG_VERSION); fclose(f); }
+        f = fopen(amipkg_data_path("db/files/amipkg.files"), "w");
+        if (f) {
+            static const char *bins[] = { "amipkg", "amipkg-gui", "amipkg-gui.info",
+                                          "amipkg-mui", "amipkg-mui.info", "amipkg.guide", 0 };
+            char probe[64];
+            for (i = 0; bins[i]; i++) {
+                BPTR l;
+                snprintf(probe, sizeof probe, "PROGDIR:%s", bins[i]);
+                l = Lock((STRPTR)probe, ACCESS_READ);
+                if (l) { UnLock(l); fprintf(f, "%s\n", probe); }
+            }
+            fclose(f);
+        }
+    } else {
+        /* Binary is newer than the record (manual update): bump the line. */
+        FILE *f = fopen(amipkg_data_path("db/installed.txt"), "wb");
+        char line[192];
+        if (!f) return;
+        for (i = 0; i < n; i++) {
+            if (strcmp(inst[i].id, "amipkg") == 0)
+                strncpy(inst[i].version, AMIPKG_VERSION, sizeof inst[i].version - 1);
+            rcpt_format_installed_line(&inst[i], line, sizeof line);
+            fprintf(f, "%s\n", line);
+        }
+        fclose(f);
+    }
+}
+
 void amipkg_ensure_dirs(void)
 {
     amipkg_bridge_assigns();
@@ -177,6 +224,7 @@ void amipkg_ensure_dirs(void)
     ensure_one(amipkg_data_path("db/files"));
     ensure_one(amipkg_data_path("db/scripts"));
     ensure_one(amipkg_data_path("db/assigns"));
+    selfseed_receipt();
 }
 
 /* Free bytes on the volume holding `path` (e.g. "SYS:" / "AMIPKG:cache/").

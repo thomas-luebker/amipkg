@@ -49,12 +49,12 @@
 #include "../core/aindex.h"
 #include "../core/aver.h"
 
-#define AMIPKG_GUI_VERSION "amipkg-gui 0.4.6"
+#define AMIPKG_GUI_VERSION "amipkg-gui " AMIPKG_VERSION
 
 /* AmigaOS Version-command tag: `Version SYS:Tools/amipkg-gui` reports the
  * exact build - essential for tester feedback. `used` keeps -Os from
  * discarding the unreferenced constant. */
-static const char verstag[] __attribute__((used)) = "$VER: amipkg-gui 0.4.6 (26.7.2026)";
+static const char verstag[] __attribute__((used)) = "$VER: amipkg-gui " AMIPKG_VERSION " (" AMIPKG_VERDATE ")";
 
 struct IntuitionBase *IntuitionBase = NULL;
 struct Library       *GadToolsBase  = NULL;

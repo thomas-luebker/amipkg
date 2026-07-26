@@ -22,6 +22,7 @@
  * feature macro that isn't active here. Define it (with newlib's own guard, so
  * this is conflict-free) BEFORE proto/bsdsocket.h - which pulls in socket.h.
  * (32-bit on m68k.) */
+#include "../core/store.h"
 #include <sys/types.h>
 #ifndef _SSIZE_T_DECLARED
 typedef long ssize_t;
@@ -248,12 +249,12 @@ static int do_get(const char *url, FILE *out, long *bytes_out,
 
     if (resume_from > 0)
         snprintf(req, sizeof req,
-                 "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: amipkg/0.4.6\r\n"
+                 "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: amipkg/" AMIPKG_VERSION "\r\n"
                  "Range: bytes=%ld-\r\nConnection: close\r\n\r\n",
                  path, host, resume_from);
     else
         snprintf(req, sizeof req,
-                 "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: amipkg/0.4.6\r\n"
+                 "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: amipkg/" AMIPKG_VERSION "\r\n"
                  "Connection: close\r\n\r\n", path, host);
     if (net_write(ssl, sock, req, (long)strlen(req)) < 0) {
         printf("amipkg: send failed\n");

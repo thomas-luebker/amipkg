@@ -42,7 +42,7 @@
  * libnix-style `__stack` global, so we do it ourselves. See main().) */
 
 /* AmigaOS Version-command tag: `Version C:amipkg` reports the exact build. */
-static const char verstag[] __attribute__((used)) = "$VER: amipkg 0.4.6 (26.7.2026)";
+static const char verstag[] __attribute__((used)) = "$VER: amipkg " AMIPKG_VERSION " (" AMIPKG_VERDATE ")";
 
 int http_available(void);
 void http_cleanup(void);
@@ -1043,7 +1043,7 @@ static int dispatch(int argc, char **argv)
 {
     int rc = 5;
     if (argc < 2) {
-        printf("amipkg 0.4.6 - the AmigaPKG package manager\n");
+        printf("amipkg " AMIPKG_VERSION " - the AmigaPKG package manager\n");
         printf("usage: amipkg update | list | avail [term] | check | doctor | info <id> | fetch <id> | install <id> [DRYRUN] | adopt <id> <drawer> [<ver>] | upgrade [<id>] | dir [<path>] | verify <file> <sha256> | remove <id> [FORCE]\n");
         return 5;
     }
