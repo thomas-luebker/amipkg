@@ -97,7 +97,7 @@ static char g_filter[64] = "";
 
 /* ---- MUI objects ---------------------------------------------------------- */
 
-static Object *app, *win, *lst, *str_find, *cyc_view, *cyc_cat, *cyc_sort;
+static Object *app, *win, *lv, *lst, *str_find, *cyc_view, *cyc_cat, *cyc_sort;
 static Object *txt_status, *txt_progress, *txt_desc;
 static Object *bt_update, *bt_check, *bt_upall, *bt_info, *bt_install,
               *bt_run, *bt_remove, *bt_refresh;
@@ -781,10 +781,14 @@ static int build_app(void)
                 End,
 
                 /* package list */
-                Child, ListviewObject,
-                    MUIA_Listview_DoubleClick, TRUE,
+                Child, lv = ListviewObject,
+                    /* WEIGHTs only - MIW/MAW are PERCENT clamps, and
+                     * "MAW=2" made column 0's minimum exceed its maximum
+                     * on big-font RTG Workbenches: MUI then REFUSES to
+                     * open the window (tester trace; UAE's topaz-8 just
+                     * squeaked by, which is why it worked there). */
                     MUIA_Listview_List, lst = ListObject, InputListFrame,
-                        MUIA_List_Format,      (ULONG)"MAW=2,MIW=30,,",
+                        MUIA_List_Format,      (ULONG)"WEIGHT=1,WEIGHT=100,WEIGHT=25,WEIGHT=30",
                         MUIA_List_Title,       TRUE,
                         MUIA_List_DisplayHook, (ULONG)&disp_hook,
                     End,
@@ -840,7 +844,7 @@ static int build_app(void)
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_FIND);
     DoMethod(lst, MUIM_Notify, MUIA_List_Active, MUIV_EveryTime,
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_SELECT);
-    DoMethod(lst, MUIM_Notify, MUIA_Listview_DoubleClick, TRUE,
+    DoMethod(lv, MUIM_Notify, MUIA_Listview_DoubleClick, TRUE,
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_DCLICK);
     DoMethod(bt_update,  MUIM_Notify, MUIA_Pressed, FALSE,
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_UPDATE);
