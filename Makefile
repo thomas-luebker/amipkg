@@ -41,8 +41,8 @@ amipkg-gui: $(CORE) $(GUI)
 
 # The MUI front-end: vendored MUI 3.8 dev-kit headers; -lamiga for
 # DoMethod/HookEntry (amiga.lib).
-amipkg-mui: $(CORE) src/amiga/mui.c
-	$(CC) $(CFLAGS) -Ivendor/mui/include -o $@ $(CORE) src/amiga/mui.c -s -lamiga -lgcc
+amipkg-mui: $(CORE) src/amiga/mui.c src/amiga/muistubs.c
+	$(CC) $(CFLAGS) -Ivendor/mui/include -o $@ $(CORE) src/amiga/mui.c src/amiga/muistubs.c -s -lamiga -lgcc
 
 clean:
 	rm -f amipkg amipkg-gui amipkg-mui tweetnacl.o

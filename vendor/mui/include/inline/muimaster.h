@@ -89,26 +89,18 @@ extern struct Library *MUIMasterBase;
         LONG, ___w, d2, LONG, ___h, d3, ULONG, ___flags, d4, \
     , MUIMASTER_BASE_NAME)
 
-/* ---- varargs wrappers (stack-tags idiom) --------------------------------- */
+/* ---- varargs wrappers ---------------------------------------------------- */
+/* OUT-OF-LINE in src/amiga/muistubs.c. As static __inline HERE, GCC 6
+ * proved the varargs unread (no va_arg in the body) and DROPPED them at
+ * every call site - garbage tag lists; the great amipkg-mui crash hunt
+ * of July 2026. Do NOT move them back into this header. */
 #ifndef NO_INLINE_STDARG
-
-static __inline Object *MUI_NewObject(char *classname, ULONG tag1, ...)
-{ return MUI_NewObjectA(classname, (struct TagItem *)&tag1); }
-
-static __inline Object *MUI_MakeObject(LONG type, ...)
-{ return MUI_MakeObjectA(type, (ULONG *)((&type) + 1)); }
-
-static __inline LONG MUI_Request(APTR app, APTR win, LONG flags, char *title,
-                                 char *gadgets, char *format, ...)
-{ return MUI_RequestA(app, win, flags, title, gadgets, format,
-                      (APTR)((&format) + 1)); }
-
-static __inline APTR MUI_AllocAslRequestTags(unsigned long type, ULONG tag1, ...)
-{ return MUI_AllocAslRequest(type, (struct TagItem *)&tag1); }
-
-static __inline BOOL MUI_AslRequestTags(APTR req, ULONG tag1, ...)
-{ return MUI_AslRequest(req, (struct TagItem *)&tag1); }
-
+Object *MUI_NewObject(char *classname, ULONG tag1, ...);
+Object *MUI_MakeObject(LONG type, ...);
+LONG MUI_Request(APTR app, APTR win, LONG flags, char *title,
+                 char *gadgets, char *format, ...);
+APTR MUI_AllocAslRequestTags(unsigned long type, ULONG tag1, ...);
+BOOL MUI_AslRequestTags(APTR req, ULONG tag1, ...);
 #endif /* NO_INLINE_STDARG */
 
 #endif /* _INLINE_MUIMASTER_H */
