@@ -1,5 +1,5 @@
 @database amipkg.guide
-@$VER: amipkg.guide 0.4.9 (26.7.2026)
+@$VER: amipkg.guide 0.4.10 (26.7.2026)
 @author "Thomas Luebker"
 @node MAIN "amipkg - the AmigaPKG package manager"
 
@@ -179,7 +179,7 @@ lines), and only then signed in.
 @{b}"Cannot delete the amipkg drawer - object in use"@{ub}
   Close any running amipkg program. If you ran Install-System, also:
     Assign AMIPKG: REMOVE
-  (Since 0.4.9 amipkg itself creates no assign and holds no lock.)
+  (Since 0.4.10 amipkg itself creates no assign and holds no lock.)
 
 @{b}A package misbehaves after manual file edits@{ub}
   `amipkg doctor` lists modified/missing files per package;

@@ -277,18 +277,31 @@ static void rebuild_list(void)
     ninst = load_installed(inst, MAX_PKGS);
 
     if (g_view == VIEW_INSTALLED) {
+        /* Old build-time receipts have no version ("-"): fall back to the
+         * catalog's (build-time installs came from that same catalog). */
+        aidx_index vidx;
+        char *vtext = read_file(amipkg_data_path("packages.json"));
+        int have_vidx = (vtext && aidx_parse(vtext, &vidx) == 0);
         for (i = 0; i < ninst && g_nrows < MAX_PKGS; i++) {
             Row *r = &g_rows[g_nrows];
+            const char *v;
             if (!contains_ci(inst[i].id, g_filter)) continue;
             strncpy(r->id, inst[i].id, sizeof r->id - 1); r->id[sizeof r->id - 1] = 0;
             strcpy(r->flag, "");
-            strncpy(r->version, shown_version(inst[i].version), sizeof r->version - 1);
+            v = inst[i].version;
+            if (have_vidx && aver_is_unknown(v)) {
+                const aidx_entry *e = aidx_find(&vidx, inst[i].id);
+                if (e && !aver_is_unknown(e->version)) v = e->version;
+            }
+            strncpy(r->version, shown_version(v), sizeof r->version - 1);
             r->version[sizeof r->version - 1] = 0;
             strcpy(r->status, "installed");
             r->desc[0] = 0;
             DoMethod(lst, MUIM_List_InsertSingle, (ULONG)r, MUIV_List_Insert_Bottom);
             g_nrows++;
         }
+        if (have_vidx) aidx_free(&vidx);
+        if (vtext) free(vtext);
     } else {
         aidx_index idx;
         char *text = read_file(amipkg_data_path("packages.json"));

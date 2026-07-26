@@ -4,7 +4,7 @@
 ; amipkg - standalone setup for AmigaOS 3.x
 ;
 ; amipkg LIVES IN THIS DRAWER - wherever you unpacked or copied it (like
-; MUI:). Since 0.4.9 it finds its data RIGHT NEXT TO ITS BINARIES: no
+; MUI:). Since 0.4.10 it finds its data RIGHT NEXT TO ITS BINARIES: no
 ; assign is created, nothing is locked, nothing outside this drawer is
 ; ever touched. This script only:
 ;   1. creates the data drawers (cache / config / db)
@@ -49,7 +49,7 @@ If Not Exists db/installed.txt
 EndIf
 Search >NIL: db/installed.txt "amipkg|"
 If Warn
-  Echo "amipkg|0.4.9|1|0" >>db/installed.txt
+  Echo "amipkg|0.4.10|1|0" >>db/installed.txt
   Echo "PROGDIR:amipkg" >db/files/amipkg.files
   Echo "PROGDIR:amipkg-gui" >>db/files/amipkg.files
   Echo "PROGDIR:amipkg-gui.info" >>db/files/amipkg.files

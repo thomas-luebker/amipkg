@@ -30,8 +30,8 @@ char *amipkg_data_path(const char *rel);
 
 /* THE version - single source for $VER tags, About boxes, the UA string
  * and the self-seeded receipt. Bump HERE (plus the catalog entry). */
-#define AMIPKG_VERSION "0.4.9"
-#define AMIPKG_VERDATE "26.7.2026"
+#define AMIPKG_VERSION "0.4.10"
+#define AMIPKG_VERDATE "27.7.2026"
 
 #define AMIPKG_DEFAULT_INSTALLDIR "SYS:Programs"
 #define MAX_PKGS   128

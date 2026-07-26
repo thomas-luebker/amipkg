@@ -464,11 +464,24 @@ static void rebuild_list(void)
     ninst = load_installed(inst, MAX_PKGS);
 
     if (g_view == VIEW_INSTALLED) {
+        /* Old build-time receipts have no version ("-"): fall back to the
+         * catalog's (build-time installs came from that same catalog). */
+        aidx_index vidx;
+        char *vtext = read_file(amipkg_data_path("packages.json"));
+        int have_vidx = (vtext && aidx_parse(vtext, &vidx) == 0);
         for (i = 0; i < ninst; i++) {
+            const char *v;
             if (!contains_ci(inst[i].id, g_filter)) continue;
-            snprintf(label, sizeof label, "%-22s %s", inst[i].id, shown_version(inst[i].version));
+            v = inst[i].version;
+            if (have_vidx && aver_is_unknown(v)) {
+                const aidx_entry *e = aidx_find(&vidx, inst[i].id);
+                if (e && !aver_is_unknown(e->version)) v = e->version;
+            }
+            snprintf(label, sizeof label, "%-22s %s", inst[i].id, shown_version(v));
             add_row(label, inst[i].id, NULL);
         }
+        if (have_vidx) aidx_free(&vidx);
+        if (vtext) free(vtext);
         /* First run opens in this view: still harvest the category labels so
          * the filter cycle is populated before the first switch to Available. */
         if (g_ncats == 0) {

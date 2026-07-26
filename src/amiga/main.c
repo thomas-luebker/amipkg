@@ -171,11 +171,23 @@ static int load_index(aidx_index *idx)
 static int cmd_list(void)
 {
     static rcpt_installed inst[MAX_PKGS];
+    aidx_index idx;
+    int have_idx;
     size_t n = load_installed(inst, MAX_PKGS), i;
     if (n == 0) { printf("No packages recorded (no receipt DB?).\n"); return 5; }
+    /* Old build-time receipts carry no version ("-") - show the catalog's
+     * as the best estimate (build-time installs came from the catalog). */
+    have_idx = (load_index(&idx) == 0);
     printf("%-24s %s\n", "Package", "Version");
-    for (i = 0; i < n; i++)
-        printf("%-24s %s\n", inst[i].id, inst[i].version);
+    for (i = 0; i < n; i++) {
+        const char *v = inst[i].version;
+        if (have_idx && aver_is_unknown(v)) {
+            const aidx_entry *e = aidx_find(&idx, inst[i].id);
+            if (e && !aver_is_unknown(e->version)) v = e->version;
+        }
+        printf("%-24s %s\n", inst[i].id, v);
+    }
+    if (have_idx) aidx_free(&idx);
     return 0;
 }
 
