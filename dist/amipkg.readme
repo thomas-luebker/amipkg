@@ -2,16 +2,16 @@ Short:        Package manager for AmigaOS 3.x (signed catalog)
 Author:       thomas@amiga-imager.com (Thomas Luebker)
 Uploader:     thomas@amiga-imager.com (Thomas Luebker)
 Type:         util/pack
-Version:      0.3
+Version:      0.4
 Architecture: m68k-amigaos >= 3.0
 Distribution: Aminet
-URL:          https://github.com/thomas-luebker/amiga-pkg
+URL:          https://github.com/thomas-luebker/amipkg
 
 amipkg - install, update and remove software on your Amiga
 ==========================================================
 
 amipkg is a package manager for classic AmigaOS 3.x - think "apt/Homebrew
-for your A500/A1200/A4000". It installs, updates and removes software from
+for your Amiga". It installs, updates and removes software from
 a curated catalog of 100+ freely-distributable classics and tools (players,
 commodities, internet apps, dev tools, games), resolved and downloaded
 straight on your Amiga.
@@ -27,9 +27,10 @@ FEATURES
  * Clean removal: a receipt database records every file and boot-script
    change; `amipkg remove` deletes only what it installed and strips its
    User-Startup blocks. `amipkg doctor` audits your installs.
- * Both worlds: a fast CLI (list/avail/info/install/upgrade/remove/update/
-   doctor, DRYRUN preview) and a GadTools GUI (browse, search, category
-   filter, newest-first, one-click install with live progress, Run button).
+ * Three front-ends, one logic: a fast CLI (list/avail/info/install/
+   upgrade/remove/update/doctor, DRYRUN preview), a zero-dependency
+   GadTools GUI, and a MUI GUI (3.8+) - browse, search, category filter,
+   newest-first, one-click install with live progress, Run and Adopt.
  * Self-updating: `amipkg upgrade amipkg`.
  * Runs on a stock 68000 with AmigaOS 3.0+; guaranteed 128 KB stack via
    StackSwap regardless of your Shell settings.
@@ -45,9 +46,11 @@ REQUIREMENTS
 
 INSTALL
 
-Extract the archive and double-click "Install" (or `Execute Install` in a
-Shell). It copies C:amipkg + SYS:Tools/amipkg-gui, seeds the signed catalog
-for offline browsing, and adds the data assign to S:User-Startup.
+Extract into a drawer of your choice - amipkg LIVES in that drawer (like
+MUI:), with the signed catalog seeded for offline browsing. Double-click
+"Install" (self-contained: nothing outside the drawer is ever touched;
+uninstall = delete the drawer) or "Install-System" (additionally adds the
+AMIPKG: assign + Shell path to S:User-Startup as one marked block).
 
 QUICK START
 

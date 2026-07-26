@@ -111,6 +111,17 @@ static long g_busy_ticks = 0;
 #define ASYNC_DONE   "RAM:amipkg-mui.done"
 #define ASYNC_SCRIPT "RAM:amipkg-mui.script"
 
+/* Crash-hunt breadcrumbs (tester machines Guru with no data): every startup
+ * phase appends one line to RAM:amipkg-mui.trace, opened+closed per line so
+ * it survives a crash. `Type RAM:amipkg-mui.trace` after a crash and report
+ * the LAST line - it names the exact phase that died. Cheap (startup only). */
+static void trace(const char *msg)
+{
+    FILE *f = fopen("RAM:amipkg-mui.trace", "a");
+    if (f) { fprintf(f, "%s\n", msg); fclose(f); }
+    printf("amipkg-mui: %s\n", msg);
+}
+
 /* ---- helpers -------------------------------------------------------------- */
 
 
@@ -667,6 +678,7 @@ static int build_app(void)
 {
     disp_hook.h_Entry    = (HOOKFUNC)HookEntry;
     disp_hook.h_SubEntry = (HOOKFUNC)disp_func;
+    trace("build_app: parsing catalog for categories");
 
     /* Category labels for the cycle: harvested once from the seeded index. */
     {
@@ -682,6 +694,7 @@ static int build_app(void)
         for (i = 0; i < g_ncats; i++) g_catlabels[i + 1] = g_catnames[i];
         g_catlabels[g_ncats + 1] = NULL;
     }
+    trace("build_app: categories done, creating MUI application tree");
 
     app = ApplicationObject,
         MUIA_Application_Title,       (ULONG)"amipkg",
@@ -806,6 +819,7 @@ static int build_app(void)
         End,
     End;
     if (!app) return 0;
+    trace("build_app: application tree created, wiring notifications");
 
     /* notifications → ReturnIDs */
     DoMethod(app, MUIM_Notify, MUIA_Application_MenuAction, MUIV_EveryTime,
@@ -840,6 +854,7 @@ static int build_app(void)
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_RUN);
     DoMethod(bt_remove,  MUIM_Notify, MUIA_Pressed, FALSE,
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_REMOVE);
+    trace("build_app: notifications wired");
     return 1;
 }
 
@@ -852,7 +867,9 @@ static int gui_run(void)
     ULONG tsig = 0;
     int timer_ok = 0, rc = 20;
 
+    trace("start (0.4)");
     amipkg_bridge_assigns();
+    trace("assign bridge done");
     IntuitionBase = (struct IntuitionBase *)OpenLibrary((STRPTR)"intuition.library", 37);
     UtilityBase   = OpenLibrary((STRPTR)"utility.library", 37);
     MUIMasterBase = OpenLibrary((STRPTR)MUIMASTER_NAME, 19);
@@ -863,6 +880,7 @@ static int gui_run(void)
         goto out;
     }
     if (!IntuitionBase || !UtilityBase) goto out;
+    trace("libraries open (muimaster/intuition/utility/asl)");
 
     if (!build_app()) { printf("amipkg-mui: could not create the application.\n"); goto out; }
 
@@ -883,12 +901,16 @@ static int gui_run(void)
     }
 #endif
 
+    trace("timer heartbeat set up");
 #ifndef NO_MODEL
+    trace("rebuild_list: loading receipts + catalog into the list");
     rebuild_list();
+    trace("rebuild_list done");
 #else
     set_status("NO_MODEL variant - list deliberately empty.");
 #endif
     update_action_state();
+    trace("action state set, opening window");
     set(win, MUIA_Window_Open, TRUE);
     {
         ULONG opened = 0;
@@ -896,6 +918,7 @@ static int gui_run(void)
         if (!opened) { printf("amipkg-mui: could not open the window.\n"); goto out; }
     }
 
+    trace("window is open, entering main loop");
     {
         int done = 0;
         long zeros = 0;
@@ -962,6 +985,7 @@ static int gui_run(void)
         }
     }
     set(win, MUIA_Window_Open, FALSE);
+    trace("clean exit");
     rc = 0;
 
 out:
