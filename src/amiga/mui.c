@@ -870,6 +870,30 @@ static int gui_run(void)
     trace("start (0.4)");
     amipkg_bridge_assigns();
     trace("assign bridge done");
+
+    /* Self-heal a fresh `amipkg install mui38`: its User-Startup assigns only
+     * take effect after a REBOOT, leaving a trap window where muimaster may
+     * be reachable (stray copy) but the MUI: tree is not - windows then fail
+     * and menustrips can Guru (tester report: t2 no-window + 8000 0008 on
+     * t4). If MUI: is missing but the standard drawer exists, set the same
+     * assigns the User-Startup block would, for THIS session. */
+    {
+        struct Process *pr = (struct Process *)FindTask(NULL);
+        APTR oldwin = pr->pr_WindowPtr;
+        BPTR l;
+        pr->pr_WindowPtr = (APTR)-1;
+        l = Lock((STRPTR)"MUI:", ACCESS_READ);
+        if (l) UnLock(l);
+        else {
+            BPTR d = Lock((STRPTR)"SYS:Programs/MUI", ACCESS_READ);
+            if (d && AssignLock((STRPTR)"MUI", d)) {
+                BPTR libs = Lock((STRPTR)"MUI:Libs", ACCESS_READ);
+                if (libs && !AssignAdd((STRPTR)"LIBS", libs)) UnLock(libs);
+                trace("self-healed MUI: assigns from SYS:Programs/MUI (session-only; reboot makes them permanent)");
+            } else if (d) UnLock(d);
+        }
+        pr->pr_WindowPtr = oldwin;
+    }
     IntuitionBase = (struct IntuitionBase *)OpenLibrary((STRPTR)"intuition.library", 37);
     UtilityBase   = OpenLibrary((STRPTR)"utility.library", 37);
     MUIMasterBase = OpenLibrary((STRPTR)MUIMASTER_NAME, 19);
