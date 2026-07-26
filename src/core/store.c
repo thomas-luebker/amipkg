@@ -81,7 +81,7 @@ size_t load_files_for(const char *id, rcpt_file *out, size_t max)
 
 /* ---- runtime data prefix ---------------------------------------------- */
 
-static char g_prefix[12] = "";
+static char g_prefix[300] = "";
 
 #ifdef __amigaos__
 static int lock_exists(const char *path)
@@ -103,8 +103,20 @@ const char *amipkg_prefix(void)
         BPTR pd;
         pr->pr_WindowPtr = (APTR)-1;
         pd = GetProgramDir();
-        if (pd && (lock_exists("PROGDIR:db") || lock_exists("PROGDIR:packages.json")))
-            strcpy(g_prefix, "PROGDIR:");          /* our drawer IS the home */
+        if (pd && (lock_exists("PROGDIR:db") || lock_exists("PROGDIR:packages.json"))) {
+            /* Our drawer IS the home. Resolve it ABSOLUTELY: "PROGDIR:" is
+             * per-process and silently points elsewhere inside any child we
+             * spawn (C:lha! - 0.4.7 regression: extraction failed for every
+             * standalone install because lha saw ITS OWN PROGDIR:). An
+             * absolute prefix is safe in-process and across children. */
+            char dir[256];
+            if (NameFromLock(pd, (STRPTR)dir, sizeof dir) && dir[0]) {
+                size_t n = strlen(dir);
+                snprintf(g_prefix, sizeof g_prefix, "%s%s",
+                         dir, dir[n - 1] == ':' ? "" : "/");
+            } else
+                strcpy(g_prefix, "PROGDIR:");      /* degraded fallback */
+        }
         else if (lock_exists("AMIPKG:"))
             strcpy(g_prefix, "AMIPKG:");           /* legacy image layout */
         else if (lock_exists("AMIGAIMAGER:")) {
@@ -113,9 +125,18 @@ const char *amipkg_prefix(void)
             BPTR src = Lock((STRPTR)"AMIGAIMAGER:", ACCESS_READ);
             if (src) AssignLock((STRPTR)"AMIPKG", src);   /* consumes lock */
             strcpy(g_prefix, "AMIPKG:");
+        } else if (pd) {
+            /* Fresh standalone: become the home right here. No assign;
+             * absolute for the same child-process reason as above. */
+            char dir[256];
+            if (NameFromLock(pd, (STRPTR)dir, sizeof dir) && dir[0]) {
+                size_t n = strlen(dir);
+                snprintf(g_prefix, sizeof g_prefix, "%s%s",
+                         dir, dir[n - 1] == ':' ? "" : "/");
+            } else
+                strcpy(g_prefix, "PROGDIR:");
         } else
-            /* Fresh standalone: become the home right here. No assign. */
-            strcpy(g_prefix, pd ? "PROGDIR:" : "AMIPKG:");
+            strcpy(g_prefix, "AMIPKG:");
         pr->pr_WindowPtr = oldwin;
     }
 #else

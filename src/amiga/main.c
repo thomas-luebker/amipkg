@@ -300,11 +300,22 @@ static int cmd_update(void)
     if (!base || !base[0]) base = AMIPKG_UPDATE_BASE;
 
     printf("Updating catalog from %s ...\n", base);
-    snprintf(url, sizeof url, "%s/packages.json", base);
+    /* Cache-buster: plain-HTTP intermediaries (router/ISP) may serve the
+     * index stale for minutes after a publish (Cache-Control max-age on
+     * the endpoint). A unique query defeats every cache in the path.
+     * dos DateStamp, not time() - newlib's gettimeofday syscall is absent. */
+    unsigned long stamp = 0;
+#ifdef __amigaos__
+    { struct DateStamp ds; DateStamp(&ds);
+      stamp = (unsigned long)ds.ds_Days * 86400UL
+            + (unsigned long)ds.ds_Minute * 60UL
+            + (unsigned long)ds.ds_Tick / 50UL; }
+#endif
+    snprintf(url, sizeof url, "%s/packages.json?t=%lu", base, stamp);
     if (!(out = fopen(jnew, "wb"))) { printf("amipkg: cannot write %s\n", jnew); return 10; }
     if (http_get(url, out, &bytes) != 0) { fclose(out); remove(jnew); return 10; }
     fclose(out);
-    snprintf(url, sizeof url, "%s/packages.json.sig", base);
+    snprintf(url, sizeof url, "%s/packages.json.sig?t=%lu", base, stamp);
     if (!(out = fopen(snew, "wb"))) { printf("amipkg: cannot write cache\n"); remove(jnew); return 10; }
     if (http_get(url, out, &bytes) != 0) { fclose(out); remove(jnew); remove(snew); return 10; }
     fclose(out);
