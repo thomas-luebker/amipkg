@@ -117,7 +117,11 @@ static long g_busy_ticks = 0;
  * the LAST line - it names the exact phase that died. Cheap (startup only). */
 static void trace(const char *msg)
 {
-    FILE *f = fopen("RAM:amipkg-mui.trace", "a");
+    /* Prefer the HOME DRAWER (survives the reboot a hard Guru forces - RAM:
+     * is wiped, which cost us the first trace round); RAM: only as the
+     * fallback before the assign bridge has run. */
+    FILE *f = fopen("AMIPKG:amipkg-mui.trace", "a");
+    if (!f) f = fopen("RAM:amipkg-mui.trace", "a");
     if (f) { fprintf(f, "%s\n", msg); fclose(f); }
     printf("amipkg-mui: %s\n", msg);
 }
@@ -957,7 +961,7 @@ static int gui_run(void)
         ULONG opened = 0;
         get(win, MUIA_Window_Open, &opened);
         if (!opened) {
-            char b[160];
+            char b[200];
             snprintf(b, sizeof b,
                      "window did NOT open. muimaster v%d.%d; chip free %ld KB, total free %ld KB. "
                      "Usual causes: incomplete MUI install (no MUI: tree - reboot after installing MUI), "
