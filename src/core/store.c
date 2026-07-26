@@ -91,7 +91,26 @@ void amipkg_bridge_assigns(void)
     pr->pr_WindowPtr = (APTR)-1;
 
     l = Lock((STRPTR)"AMIPKG:", ACCESS_READ);
-    if (l) UnLock(l);
+    if (l) {
+        /* Assign exists - but is it STALE? If the RUNNING binary's drawer
+         * looks like a bundle home (amipkg + packages.json beside us) and
+         * the assign points somewhere else, the user moved/re-extracted
+         * the bundle: repoint the session assign at OUR drawer. (Amiga-
+         * Imager images are immune - there the GUIs live IN the assigned
+         * drawer, so SameLock matches and nothing changes.) */
+        BPTR pd = GetProgramDir();
+        if (pd && SameLock(l, pd) != LOCK_SAME) {
+            BPTR a = Lock((STRPTR)"PROGDIR:amipkg", ACCESS_READ);
+            BPTR c = Lock((STRPTR)"PROGDIR:packages.json", ACCESS_READ);
+            if (a && c) {
+                BPTR home = DupLock(pd);
+                if (home) AssignLock((STRPTR)"AMIPKG", home);
+            }
+            if (a) UnLock(a);
+            if (c) UnLock(c);
+        }
+        UnLock(l);
+    }
     else {
         /* Migration read (never created): an Amiga-Imager-built image
          * provides AMIGAIMAGER: - alias AMIPKG: to the same drawer. */

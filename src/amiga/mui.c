@@ -46,7 +46,7 @@
 #include "../core/aindex.h"
 #include "../core/aver.h"
 
-static const char verstag[] __attribute__((used)) = "$VER: amipkg-mui 0.4.3 (26.7.2026)";
+static const char verstag[] __attribute__((used)) = "$VER: amipkg-mui 0.4.4 (26.7.2026)";
 
 #ifndef MAKE_ID
 #define MAKE_ID(a,b,c,d) ((ULONG)(a)<<24 | (ULONG)(b)<<16 | (ULONG)(c)<<8 | (ULONG)(d))
@@ -135,9 +135,15 @@ static void trace(const char *msg)
  * image location (C:amipkg). Resolved once, after the assign bridge ran. */
 static const char *cli_path(void)
 {
-    static char path[16] = "";
+    static char path[20] = "";
     if (!path[0]) {
-        BPTR l = Lock((STRPTR)"AMIPKG:amipkg", ACCESS_READ);
+        /* OWN DRAWER FIRST: the CLI next to this GUI is by definition the
+         * matching version (a stale AMIPKG: assign can point at an old
+         * drawer - tester report: empty output + rc 10 because the shelled
+         * command did not exist). Then the assign, then the image path. */
+        BPTR l = Lock((STRPTR)"PROGDIR:amipkg", ACCESS_READ);
+        if (l) { UnLock(l); strcpy(path, "PROGDIR:amipkg"); return path; }
+        l = Lock((STRPTR)"AMIPKG:amipkg", ACCESS_READ);
         if (l) { UnLock(l); strcpy(path, "AMIPKG:amipkg"); }
         else strcpy(path, "C:amipkg");
     }
@@ -687,7 +693,7 @@ static void action_set_dir(void)
 static void action_about(void)
 {
     MUI_Request(app, win, 0, (char *)"About amipkg", (char *)"_OK",
-        "\033bamipkg-mui 0.4.3\033n\n\n"
+        "\033bamipkg-mui 0.4.4\033n\n\n"
         "The AmigaPKG package manager for AmigaOS 3.x.\n"
         "Browse, install, update, and remove software\n"
         "from the signed AmigaPKG catalog.\n\n"
@@ -895,7 +901,7 @@ static int gui_run(void)
     ULONG tsig = 0;
     int timer_ok = 0, rc = 20;
 
-    trace("start (0.4.3)");
+    trace("start (0.4.4)");
     amipkg_bridge_assigns();
     trace("assign bridge done");
 

@@ -49,12 +49,12 @@
 #include "../core/aindex.h"
 #include "../core/aver.h"
 
-#define AMIPKG_GUI_VERSION "amipkg-gui 0.4.3"
+#define AMIPKG_GUI_VERSION "amipkg-gui 0.4.4"
 
 /* AmigaOS Version-command tag: `Version SYS:Tools/amipkg-gui` reports the
  * exact build - essential for tester feedback. `used` keeps -Os from
  * discarding the unreferenced constant. */
-static const char verstag[] __attribute__((used)) = "$VER: amipkg-gui 0.4.3 (26.7.2026)";
+static const char verstag[] __attribute__((used)) = "$VER: amipkg-gui 0.4.4 (26.7.2026)";
 
 struct IntuitionBase *IntuitionBase = NULL;
 struct Library       *GadToolsBase  = NULL;
@@ -178,9 +178,15 @@ static int contains_ci(const char *hay, const char *needle)
  * image location (C:amipkg). Resolved once, after the assign bridge ran. */
 static const char *cli_path(void)
 {
-    static char path[16] = "";
+    static char path[20] = "";
     if (!path[0]) {
-        BPTR l = Lock((STRPTR)"AMIPKG:amipkg", ACCESS_READ);
+        /* OWN DRAWER FIRST: the CLI next to this GUI is by definition the
+         * matching version (a stale AMIPKG: assign can point at an old
+         * drawer - tester report: empty output + rc 10 because the shelled
+         * command did not exist). Then the assign, then the image path. */
+        BPTR l = Lock((STRPTR)"PROGDIR:amipkg", ACCESS_READ);
+        if (l) { UnLock(l); strcpy(path, "PROGDIR:amipkg"); return path; }
+        l = Lock((STRPTR)"AMIPKG:amipkg", ACCESS_READ);
         if (l) { UnLock(l); strcpy(path, "AMIPKG:amipkg"); }
         else strcpy(path, "C:amipkg");
     }
