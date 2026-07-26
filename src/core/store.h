@@ -14,18 +14,20 @@
 #include <stddef.h>
 #include "receipts.h"
 
-/* The ONE data assign: AMIPKG: - it points at amipkg's HOME, the drawer
- * where amipkg was unpacked or copied (like MUI:). Binaries, catalog, cache
- * and receipt DB live together in that drawer. amipkg_bridge_assigns()
- * creates it on EVERY run (PROGDIR:-based - nothing is written to any
- * system file); on Amiga-Imager-built images it aliases the image's
- * existing AMIGAIMAGER: assign instead (read-only compat - amipkg never
- * creates the legacy name anywhere). */
-#define AMIPKG_DB_PREFIX   "AMIPKG:db/"
-#define AMIPKG_INDEX_PATH  "AMIPKG:packages.json"
-#define AMIPKG_CACHE_DIR   "AMIPKG:cache/"
-#define AMIPKG_CONFIG_DIR  "AMIPKG:config/"
-#define AMIPKG_INSTALLDIR_FILE "AMIPKG:config/installdir"
+/* amipkg's HOME is the drawer the binaries live in (like MUI:) - catalog,
+ * cache and receipt DB sit right next to them. Data paths are built at
+ * RUNTIME from amipkg_prefix():
+ *   "PROGDIR:"  the normal case - the running binary's drawer IS the home
+ *               (db/ or packages.json beside it, or a fresh standalone).
+ *               NO assign is created, NOTHING is locked beyond execution.
+ *   "AMIPKG:"   legacy fallback for pre-0.4.4 Amiga-Imager images where the
+ *               CLI lives in C: and the data under the boot-time assign
+ *               (created from AMIGAIMAGER: on 0.99-era images).
+ * Use amipkg_data_path("db/installed.txt") for a ready-to-open path, or
+ * printf-style "%sdb/files/%s.files", amipkg_prefix(), id. */
+const char *amipkg_prefix(void);
+char *amipkg_data_path(const char *rel);
+
 #define AMIPKG_DEFAULT_INSTALLDIR "SYS:Programs"
 #define MAX_PKGS   128
 #define MAX_FILES  512
@@ -62,7 +64,7 @@ int amipkg_set_installdir(const char *path);
 void amipkg_get_pkgdir(const char *id, char *out, size_t n);
 int amipkg_set_pkgdir(const char *id, const char *path);
 
-/* Resolve AMIPKG: (home-drawer bootstrap / image alias; AssignLock from
+/* Warm up the data-prefix resolution (see amipkg_prefix; AssignLock from
  * whichever exists). No-op on the host build. Call once at startup -
  * the CLI (ensure_dirs) and BOTH GUIs do. */
 void amipkg_bridge_assigns(void);

@@ -1,5 +1,5 @@
 @database amipkg.guide
-@$VER: amipkg.guide 0.4.4 (26.7.2026)
+@$VER: amipkg.guide 0.4.5 (26.7.2026)
 @author "Thomas Luebker"
 @node MAIN "amipkg - the AmigaPKG package manager"
 
@@ -42,8 +42,10 @@ Think "apt or Homebrew for your A500/A1200/A4000":
 
 @node REQ "Requirements"
 @{b}Two setups@{ub}: plain @{b}Install@{ub} keeps everything in the drawer
-(zero system footprint); @{b}Install-System@{ub} additionally adds the
-AMIPKG: assign + Shell path to S:User-Startup (one marked block).
+(zero system footprint - no assign, no lock; the programs find their
+data next to their binaries); @{b}Install-System@{ub} additionally adds an
+optional AMIPKG: assign + Shell path to S:User-Startup (one marked
+block, pure convenience).
 
 @{b}Requirements@{ub}
 
@@ -170,15 +172,14 @@ lines), and only then signed in.
   meet. That is the check working as intended.
 
 @{b}Moved the amipkg drawer?@{ub}
-  Self-contained setup: nothing to do - the assign is re-created
-  from the drawer's location every start. Integrated setup: delete
-  the old "amipkg home" block from S:User-Startup and run
-  Install-System again from the new location.
+  Self-contained setup: nothing to do - the data moves with the
+  binaries. Integrated setup: delete the old "amipkg home" block
+  from S:User-Startup and run Install-System again from there.
 
 @{b}"Cannot delete the amipkg drawer - object in use"@{ub}
-  The session assign still points at it. Run:
+  Close any running amipkg program. If you ran Install-System, also:
     Assign AMIPKG: REMOVE
-  (plus close any running amipkg program), then delete the drawer.
+  (Since 0.4.5 amipkg itself creates no assign and holds no lock.)
 
 @{b}A package misbehaves after manual file edits@{ub}
   `amipkg doctor` lists modified/missing files per package;

@@ -42,7 +42,7 @@
  * libnix-style `__stack` global, so we do it ourselves. See main().) */
 
 /* AmigaOS Version-command tag: `Version C:amipkg` reports the exact build. */
-static const char verstag[] __attribute__((used)) = "$VER: amipkg 0.4.4 (26.7.2026)";
+static const char verstag[] __attribute__((used)) = "$VER: amipkg 0.4.5 (26.7.2026)";
 
 int http_available(void);
 void http_cleanup(void);
@@ -153,10 +153,10 @@ static const aj_node *find_entry_obj_by_id(const aj_node *root, const char *id)
 
 static int load_index(aidx_index *idx)
 {
-    char *text = read_file(AMIPKG_INDEX_PATH);
+    char *text = read_file(amipkg_data_path("packages.json"));
     int rc;
     if (!text) {
-        printf("amipkg: no catalog at %s\n", AMIPKG_INDEX_PATH);
+        printf("amipkg: no catalog at %s\n", amipkg_data_path("packages.json"));
         printf("Bring your network up and run:  amipkg update\n");
         return 1;
     }
@@ -295,8 +295,8 @@ static int cmd_update(void)
     long bytes = 0;
     size_t jl, sl;
     FILE *out;
-    const char *jnew = AMIPKG_CACHE_DIR "packages.json.new";
-    const char *snew = AMIPKG_CACHE_DIR "packages.json.sig.new";
+    char jnew[320]; strcpy(jnew, amipkg_data_path("cache/packages.json.new"));
+    char snew[320]; strcpy(snew, amipkg_data_path("cache/packages.json.sig.new"));
     if (!base || !base[0]) base = AMIPKG_UPDATE_BASE;
 
     printf("Updating catalog from %s ...\n", base);
@@ -322,9 +322,9 @@ static int cmd_update(void)
         goto fail;
     }
     /* Verified: install it as the new seeded index (+ keep the .sig alongside). */
-    if (!(out = fopen(AMIPKG_INDEX_PATH, "wb"))) { printf("amipkg: cannot write %s\n", AMIPKG_INDEX_PATH); goto fail; }
+    if (!(out = fopen(amipkg_data_path("packages.json"), "wb"))) { printf("amipkg: cannot write %s\n", amipkg_data_path("packages.json")); goto fail; }
     fwrite(json, 1, jl, out); fclose(out);
-    if ((out = fopen(AMIPKG_INDEX_PATH ".sig", "wb"))) { fwrite(sig, 1, sl, out); fclose(out); }
+    if ((out = fopen(amipkg_data_path("packages.json.sig"), "wb"))) { fwrite(sig, 1, sl, out); fclose(out); }
     remove(jnew); remove(snew);
     free(json); free(sig);
     printf("Catalog updated + signature verified. Run 'amipkg avail' to see it.\n");
@@ -367,7 +367,7 @@ static int fetch_verified(const aidx_entry *e, char *dest_out, size_t dest_sz)
         printf("amipkg: '%s' has no pinned sha256 - refusing (trust contract).\n", e->id);
         return 5;
     }
-    snprintf(dest_out, dest_sz, AMIPKG_CACHE_DIR "%s", basename_of(e->archive_url));
+    snprintf(dest_out, dest_sz, "%scache/%s", amipkg_prefix(), basename_of(e->archive_url));
     /* Already cached + verified? skip the download. */
     if (sha256_of_file(dest_out, hex) == 0 && strcmp(hex, e->archive_sha256) == 0) {
         printf("Cached %s (sha256 verified).\n", e->id);
@@ -419,7 +419,7 @@ static void receipt_record_file(const char *id, const char *path)
 {
     char rp[192], hex[65];
     FILE *f;
-    snprintf(rp, sizeof rp, AMIPKG_DB_PREFIX "files/%s.files", id);
+    snprintf(rp, sizeof rp, "%sdb/files/%s.files", amipkg_prefix(), id);
     f = fopen(rp, "a");
     if (!f) return;
     if (sha256_of_file(path, hex) == 0) fprintf(f, "%s|%s\n", path, hex);
@@ -501,7 +501,7 @@ static int space_ok(const aidx_entry *e, const char *archive_path, const char *d
     f = fopen(archive_path, "rb");
     if (f) { fclose(f); }
     else {
-        freeb = amipkg_volume_free(AMIPKG_CACHE_DIR);
+        freeb = amipkg_volume_free(amipkg_data_path("cache/"));
         if (freeb >= 0 && freeb < (long long)e->archive_size + (256L * 1024)) {
             printf("amipkg: not enough space on the cache volume for %s "
                    "(need ~%ldK free).\n", e->id, (long)(e->archive_size / 1024 + 256));
@@ -542,7 +542,7 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
     /* Packages with a portable recipe run it; the fetch-only Aminet entries fall
      * back to a generic install (extract into the configured install drawer). */
     if (e->has_recipe) {
-        char *json = read_file(AMIPKG_INDEX_PATH);
+        char *json = read_file(amipkg_data_path("packages.json"));
         tree = json ? ajson_parse(json) : NULL;
         free(json);
         entry_obj = tree ? find_entry_obj_by_id(tree, e->id) : NULL;
@@ -565,7 +565,7 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
                 vol[(size_t)(colon - dir) + 1] = '\0';
             } else strcpy(vol, "SYS:");
         }
-        snprintf(archive, sizeof archive, AMIPKG_CACHE_DIR "%s", basename_of(e->archive_url));
+        snprintf(archive, sizeof archive, "%scache/%s", amipkg_prefix(), basename_of(e->archive_url));
         if (!space_ok(e, archive, vol)) { if (tree) ajson_free(tree); return 5; }
     }
 
@@ -575,11 +575,11 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
     printf("Unpacking + installing %s...\n", e->id);
     if (archive_is_adf(archive)) {
         /* Package shipped as a raw Amiga floppy image: read its OFS/FFS tree. */
-        if (adf_extract(archive, AMIPKG_CACHE_DIR "extract") < 0) {
+        if (adf_extract(archive, amipkg_data_path("cache/extract")) < 0) {
             printf("amipkg: not a readable OFS/FFS ADF.\n");
             if (tree) ajson_free(tree); return 10;
         }
-    } else if (!amipkg_extract(archive, AMIPKG_CACHE_DIR "extract")) {
+    } else if (!amipkg_extract(archive, amipkg_data_path("cache/extract"))) {
         printf("amipkg: extraction failed (C:lha present?).\n");
         if (tree) ajson_free(tree); return 10;
     }
@@ -592,7 +592,7 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
     }
     if (e->has_recipe) {
         root = getenv("AMIPKG_ROOT"); if (!root || !root[0]) root = "SYS:";
-        n = amipkg_run_recipe(&recipe, AMIPKG_CACHE_DIR "extract", root, paths, 256);
+        n = amipkg_run_recipe(&recipe, amipkg_data_path("cache/extract"), root, paths, 256);
     } else {
         /* Generic: drop the extracted tree into the configured install drawer
          * (default SYS:Programs; overridable via `amipkg dir` / AMIPKG_INSTALLDIR).
@@ -603,7 +603,7 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
         if (archive_is_adf(archive)) snprintf(dest, sizeof dest, "%s/%s", dir, e->id);
         else                         snprintf(dest, sizeof dest, "%s", dir);
         printf("(no recipe - installing into %s)\n", dest);
-        n = amipkg_install_generic(AMIPKG_CACHE_DIR "extract", dest, paths, 256);
+        n = amipkg_install_generic(amipkg_data_path("cache/extract"), dest, paths, 256);
     }
     if (n == 0) {
         printf("amipkg: nothing installed (no files matched / not runnable here).\n");
@@ -618,7 +618,7 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
         char rp[192];
         FILE *f;
         size_t k;
-        snprintf(rp, sizeof rp, AMIPKG_DB_PREFIX "scripts/%s.edits", e->id);
+        snprintf(rp, sizeof rp, "%sdb/scripts/%s.edits", amipkg_prefix(), e->id);
         f = NULL;
         for (k = 0; k < recipe.op_count; k++) {
             if (recipe.ops[k].type != AROP_SCRIPT_INJECT) continue;
@@ -626,7 +626,7 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
             if (f) fprintf(f, "S:User-Startup|%s|amipkg\n", recipe.ops[k].marker);
         }
         if (f) fclose(f);
-        snprintf(rp, sizeof rp, AMIPKG_DB_PREFIX "scripts/%s.remove", e->id);
+        snprintf(rp, sizeof rp, "%sdb/scripts/%s.remove", amipkg_prefix(), e->id);
         f = NULL;
         for (k = 0; k < recipe.op_count; k++) {
             if (recipe.ops[k].type != AROP_REMOVE_SCRIPT) continue;
@@ -637,7 +637,7 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
     }
     /* Record in installed.txt. On an upgrade the old line was already removed
      * above (pkg_installed -> cmd_remove), so this append leaves exactly one. */
-    { FILE *f = fopen(AMIPKG_DB_PREFIX "installed.txt", "a");
+    { FILE *f = fopen(amipkg_data_path("db/installed.txt"), "a");
       if (f) { fprintf(f, "%s|%s|%ld|0\n", e->id, e->version, idx->index_version); fclose(f); } }
     printf("Installed %s %s: %lu file(s).\n", e->id, e->version, (unsigned long)n);
     if (e->has_recipe) {
@@ -865,7 +865,7 @@ static int cmd_remove(const char *id, int force)
     {
         char rp[192];
         char *sc;
-        snprintf(rp, sizeof rp, AMIPKG_DB_PREFIX "scripts/%s.remove", id);
+        snprintf(rp, sizeof rp, "%sdb/scripts/%s.remove", amipkg_prefix(), id);
         sc = read_file(rp);
         if (sc) {
             printf("Running %s's uninstall script...\n", id);
@@ -884,7 +884,7 @@ static int cmd_remove(const char *id, int force)
 
     /* Rewrite installed.txt without this id. */
     {
-        FILE *f = fopen(AMIPKG_DB_PREFIX "installed.txt", "wb");
+        FILE *f = fopen(amipkg_data_path("db/installed.txt"), "wb");
         char line[192];
         if (f) {
             for (i = 0; i < ninst; i++) {
@@ -897,11 +897,11 @@ static int cmd_remove(const char *id, int force)
         {
             char p[160];
             char *text;
-            snprintf(p, sizeof p, AMIPKG_DB_PREFIX "files/%s.files", id);
+            snprintf(p, sizeof p, "%sdb/files/%s.files", amipkg_prefix(), id);
             remove(p);
             /* Strip the package's boot-script overlay blocks (ScriptEditor
              * BEGIN/END markers recorded in scripts/<id>.edits). */
-            snprintf(p, sizeof p, AMIPKG_DB_PREFIX "scripts/%s.edits", id);
+            snprintf(p, sizeof p, "%sdb/scripts/%s.edits", amipkg_prefix(), id);
             text = read_file(p);
             if (text) {
                 static rcpt_edit edits[32];
@@ -933,7 +933,7 @@ static void receipt_remove_installed(const char *id)
 {
     static rcpt_installed inst[MAX_PKGS];
     size_t ninst = load_installed(inst, MAX_PKGS), i;
-    FILE *f = fopen(AMIPKG_DB_PREFIX "installed.txt", "wb");
+    FILE *f = fopen(amipkg_data_path("db/installed.txt"), "wb");
     char line[192];
     if (!f) return;
     for (i = 0; i < ninst; i++) {
@@ -958,7 +958,7 @@ static int cmd_adopt(const char *id, const char *drawer, const char *version)
         char rp[192];
         printf("amipkg: '%s' is already recorded - re-adopting (old receipt replaced, no files touched).\n", id);
         receipt_remove_installed(id);
-        snprintf(rp, sizeof rp, AMIPKG_DB_PREFIX "files/%s.files", id);
+        snprintf(rp, sizeof rp, "%sdb/files/%s.files", amipkg_prefix(), id);
         remove(rp);
     }
     if (load_index(&idx) != 0) return 10;
@@ -996,7 +996,7 @@ static int cmd_adopt(const char *id, const char *drawer, const char *version)
         amipkg_set_pkgdir(id, parent);
     }
 
-    { FILE *f = fopen(AMIPKG_DB_PREFIX "installed.txt", "a");
+    { FILE *f = fopen(amipkg_data_path("db/installed.txt"), "a");
       if (f) { fprintf(f, "%s|%s|%ld|0\n", id,
                        version && version[0] ? version : "-",
                        idx.index_version); fclose(f); } }
@@ -1031,7 +1031,7 @@ static int cmd_dir(const char *path)
     }
     if (strcmp(path, "-") == 0) path = NULL;   /* clear -> default */
     if (amipkg_set_installdir(path) != 0) {
-        printf("amipkg: could not write %s\n", AMIPKG_INSTALLDIR_FILE);
+        printf("amipkg: could not write %s\n", amipkg_data_path("config/installdir"));
         return 10;
     }
     amipkg_get_installdir(cur, sizeof cur);
@@ -1043,7 +1043,7 @@ static int dispatch(int argc, char **argv)
 {
     int rc = 5;
     if (argc < 2) {
-        printf("amipkg 0.4.4 - the AmigaPKG package manager\n");
+        printf("amipkg 0.4.5 - the AmigaPKG package manager\n");
         printf("usage: amipkg update | list | avail [term] | check | doctor | info <id> | fetch <id> | install <id> [DRYRUN] | adopt <id> <drawer> [<ver>] | upgrade [<id>] | dir [<path>] | verify <file> <sha256> | remove <id> [FORCE]\n");
         return 5;
     }

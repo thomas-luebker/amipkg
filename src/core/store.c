@@ -58,7 +58,7 @@ int sha256_of_file(const char *path, char out_hex[65])
 
 size_t load_installed(rcpt_installed *out, size_t max)
 {
-    char *text = read_file(AMIPKG_DB_PREFIX "installed.txt");
+    char *text = read_file(amipkg_data_path("db/installed.txt"));
     size_t n;
     if (!text) return 0;
     n = rcpt_parse_installed(text, out, max);
@@ -71,7 +71,7 @@ size_t load_files_for(const char *id, rcpt_file *out, size_t max)
     char path[128];
     char *text;
     size_t n;
-    snprintf(path, sizeof path, AMIPKG_DB_PREFIX "files/%s.files", id);
+    snprintf(path, sizeof path, "%sdb/files/%s.files", amipkg_prefix(), id);
     text = read_file(path);
     if (!text) return 0;
     n = rcpt_parse_files(text, out, max);
@@ -79,59 +79,66 @@ size_t load_files_for(const char *id, rcpt_file *out, size_t max)
     return n;
 }
 
+/* ---- runtime data prefix ---------------------------------------------- */
+
+static char g_prefix[12] = "";
+
+#ifdef __amigaos__
+static int lock_exists(const char *path)
+{
+    BPTR l = Lock((STRPTR)path, ACCESS_READ);
+    if (l) { UnLock(l); return 1; }
+    return 0;
+}
+#endif
+
+const char *amipkg_prefix(void)
+{
+    if (g_prefix[0]) return g_prefix;
+#ifdef __amigaos__
+    {
+        /* Suppress "Please insert volume" requesters while probing. */
+        struct Process *pr = (struct Process *)FindTask(NULL);
+        APTR oldwin = pr->pr_WindowPtr;
+        BPTR pd;
+        pr->pr_WindowPtr = (APTR)-1;
+        pd = GetProgramDir();
+        if (pd && (lock_exists("PROGDIR:db") || lock_exists("PROGDIR:packages.json")))
+            strcpy(g_prefix, "PROGDIR:");          /* our drawer IS the home */
+        else if (lock_exists("AMIPKG:"))
+            strcpy(g_prefix, "AMIPKG:");           /* legacy image layout */
+        else if (lock_exists("AMIGAIMAGER:")) {
+            /* pre-0.4 image: alias AMIPKG: from the old assign (read-only
+             * migration - the legacy name is never created by us). */
+            BPTR src = Lock((STRPTR)"AMIGAIMAGER:", ACCESS_READ);
+            if (src) AssignLock((STRPTR)"AMIPKG", src);   /* consumes lock */
+            strcpy(g_prefix, "AMIPKG:");
+        } else
+            /* Fresh standalone: become the home right here. No assign. */
+            strcpy(g_prefix, pd ? "PROGDIR:" : "AMIPKG:");
+        pr->pr_WindowPtr = oldwin;
+    }
+#else
+    strcpy(g_prefix, "AMIPKG:");   /* host build: inert, logic tests only */
+#endif
+    return g_prefix;
+}
+
+char *amipkg_data_path(const char *rel)
+{
+    static char ring[4][320];
+    static int i = 0;
+    char *b = ring[i = (i + 1) & 3];
+    snprintf(b, sizeof ring[0], "%s%s", amipkg_prefix(), rel);
+    return b;
+}
+
+/* Kept as the GUIs' startup hook: resolving the prefix does everything the
+ * old assign bridge did (incl. the pre-0.4 image migration). No assign is
+ * created on the standalone path - nothing locks the drawer. */
 void amipkg_bridge_assigns(void)
 {
-#ifdef __amigaos__
-    /* Suppress the system "Please insert volume ..." requester while we
-     * PROBE assigns that may not exist - without this, the probes themselves
-     * spam requesters on systems that were never set up (tester report). */
-    struct Process *pr = (struct Process *)FindTask(NULL);
-    APTR oldwin = pr->pr_WindowPtr;
-    BPTR l, src;
-    pr->pr_WindowPtr = (APTR)-1;
-
-    l = Lock((STRPTR)"AMIPKG:", ACCESS_READ);
-    if (l) {
-        /* Assign exists - but is it STALE? If the RUNNING binary's drawer
-         * looks like a bundle home (amipkg + packages.json beside us) and
-         * the assign points somewhere else, the user moved/re-extracted
-         * the bundle: repoint the session assign at OUR drawer. (Amiga-
-         * Imager images are immune - there the GUIs live IN the assigned
-         * drawer, so SameLock matches and nothing changes.) */
-        BPTR pd = GetProgramDir();
-        if (pd && SameLock(l, pd) != LOCK_SAME) {
-            BPTR a = Lock((STRPTR)"PROGDIR:amipkg", ACCESS_READ);
-            BPTR c = Lock((STRPTR)"PROGDIR:packages.json", ACCESS_READ);
-            if (a && c) {
-                BPTR home = DupLock(pd);
-                if (home) AssignLock((STRPTR)"AMIPKG", home);
-            }
-            if (a) UnLock(a);
-            if (c) UnLock(c);
-        }
-        UnLock(l);
-    }
-    else {
-        /* Migration read (never created): an Amiga-Imager-built image
-         * provides AMIGAIMAGER: - alias AMIPKG: to the same drawer. */
-        src = Lock((STRPTR)"AMIGAIMAGER:", ACCESS_READ);
-        if (src) AssignLock((STRPTR)"AMIPKG", src);   /* consumes the lock */
-        else {
-            /* Standalone: amipkg lives WHERE IT WAS UNPACKED OR COPIED -
-             * home is the drawer holding the running binary (PROGDIR:),
-             * like MUI:. Catalog, cache and receipt DB sit next to it. */
-            BPTR home = GetProgramDir();     /* shared lock - do NOT unlock */
-            src = home ? DupLock(home) : Lock((STRPTR)"", ACCESS_READ);
-            if (src) AssignLock((STRPTR)"AMIPKG", src);
-        }
-    }
-
-    /* NO persistence: amipkg never writes to S:User-Startup or any other
-     * system file. The bridge runs on EVERY start (CLI dispatch + both GUI
-     * launches), so the assign is simply re-created per session - zero
-     * footprint outside the home drawer. */
-    pr->pr_WindowPtr = oldwin;
-#endif
+    (void)amipkg_prefix();
 }
 
 /* Trim leading/trailing whitespace (incl. CR/LF) in place. */
@@ -151,7 +158,7 @@ void amipkg_get_installdir(char *out, size_t n)
     const char *env;
     if (n == 0) return;
     /* 1. config file wins */
-    text = read_file(AMIPKG_INSTALLDIR_FILE);
+    text = read_file(amipkg_data_path("config/installdir"));
     if (text) {
         trim(text);
         if (text[0]) { strncpy(out, text, n - 1); out[n-1] = '\0'; free(text); return; }
@@ -168,7 +175,7 @@ void amipkg_get_pkgdir(const char *id, char *out, size_t n)
 {
     char cfg[192];
     char *text;
-    snprintf(cfg, sizeof cfg, AMIPKG_CONFIG_DIR "dir-%s", id);
+    snprintf(cfg, sizeof cfg, "%sconfig/dir-%s", amipkg_prefix(), id);
     text = read_file(cfg);
     if (text) {
         trim(text);
@@ -182,7 +189,7 @@ int amipkg_set_pkgdir(const char *id, const char *path)
 {
     char cfg[192];
     FILE *f;
-    snprintf(cfg, sizeof cfg, AMIPKG_CONFIG_DIR "dir-%s", id);
+    snprintf(cfg, sizeof cfg, "%sconfig/dir-%s", amipkg_prefix(), id);
     if (!path || !path[0]) { remove(cfg); return 0; }
     f = fopen(cfg, "wb");
     if (!f) return 1;
@@ -195,10 +202,10 @@ int amipkg_set_installdir(const char *path)
 {
     FILE *f;
     char buf[256];
-    if (!path || !path[0]) { remove(AMIPKG_INSTALLDIR_FILE); return 0; }
+    if (!path || !path[0]) { remove(amipkg_data_path("config/installdir")); return 0; }
     strncpy(buf, path, sizeof buf - 1); buf[sizeof buf - 1] = '\0';
     trim(buf);
-    f = fopen(AMIPKG_INSTALLDIR_FILE, "wb");
+    f = fopen(amipkg_data_path("config/installdir"), "wb");
     if (!f) return 1;
     fprintf(f, "%s\n", buf);
     fclose(f);

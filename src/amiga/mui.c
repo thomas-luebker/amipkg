@@ -46,7 +46,7 @@
 #include "../core/aindex.h"
 #include "../core/aver.h"
 
-static const char verstag[] __attribute__((used)) = "$VER: amipkg-mui 0.4.4 (26.7.2026)";
+static const char verstag[] __attribute__((used)) = "$VER: amipkg-mui 0.4.5 (26.7.2026)";
 
 #ifndef MAKE_ID
 #define MAKE_ID(a,b,c,d) ((ULONG)(a)<<24 | (ULONG)(b)<<16 | (ULONG)(c)<<8 | (ULONG)(d))
@@ -120,7 +120,7 @@ static void trace(const char *msg)
     /* Prefer the HOME DRAWER (survives the reboot a hard Guru forces - RAM:
      * is wiped, which cost us the first trace round); RAM: only as the
      * fallback before the assign bridge has run. */
-    FILE *f = fopen("AMIPKG:amipkg-mui.trace", "a");
+    FILE *f = fopen(amipkg_data_path("amipkg-mui.trace"), "a");
     if (!f) f = fopen("RAM:amipkg-mui.trace", "a");
     if (f) { fprintf(f, "%s\n", msg); fclose(f); }
     /* No printf here: stdio would OPEN A CONSOLE WINDOW when launched from
@@ -133,6 +133,27 @@ static void trace(const char *msg)
 /* The CLI binary to shell out to. Standalone home first (AMIPKG:amipkg --
  * amipkg lives in the drawer it was unpacked into), then the Amiga-Imager
  * image location (C:amipkg). Resolved once, after the assign bridge ran. */
+
+/* Launch the AmigaGuide manual. MultiView is a SEPARATE process, so
+ * "PROGDIR:" would resolve to MULTIVIEW's drawer - build the absolute
+ * path of OUR drawer when the home is PROGDIR:-based (no assign). */
+static void open_docs(void)
+{
+    char cmd[400], dir[256];
+    if (strcmp(amipkg_prefix(), "PROGDIR:") == 0) {
+        BPTR pd = GetProgramDir();
+        dir[0] = 0;
+        if (!pd || !NameFromLock(pd, (STRPTR)dir, sizeof dir)) dir[0] = 0;
+        if (dir[0]) {
+            snprintf(cmd, sizeof cmd,
+                     "Run >NIL: SYS:Utilities/MultiView \"%s%samipkg.guide\"",
+                     dir, dir[strlen(dir) - 1] == ':' ? "" : "/");
+        } else
+            snprintf(cmd, sizeof cmd, "Run >NIL: SYS:Utilities/MultiView PROGDIR:amipkg.guide");
+    } else
+        snprintf(cmd, sizeof cmd, "Run >NIL: SYS:Utilities/MultiView %samipkg.guide", amipkg_prefix());
+    SystemTags((STRPTR)cmd, TAG_DONE);
+}
 static const char *cli_path(void)
 {
     static char path[20] = "";
@@ -259,7 +280,7 @@ static void rebuild_list(void)
         }
     } else {
         aidx_index idx;
-        char *text = read_file(AMIPKG_INDEX_PATH);
+        char *text = read_file(amipkg_data_path("packages.json"));
         if (text && aidx_parse(text, &idx) == 0) {
             static const aidx_entry *order[MAX_PKGS * 2];
             size_t norder = 0;
@@ -507,7 +528,7 @@ static void action_info(void)
     static char msg[1024];
     Row *r = selected_row();
     if (!r) { set_status("Select a package first."); return; }
-    text = read_file(AMIPKG_INDEX_PATH);
+    text = read_file(amipkg_data_path("packages.json"));
     if (!text) { set_status("No catalog yet - click Update Catalog."); return; }
     if (aidx_parse(text, &idx) != 0) { free(text); set_status("Seeded index unreadable."); return; }
     free(text);
@@ -693,7 +714,7 @@ static void action_set_dir(void)
 static void action_about(void)
 {
     MUI_Request(app, win, 0, (char *)"About amipkg", (char *)"_OK",
-        "\033bamipkg-mui 0.4.4\033n\n\n"
+        "\033bamipkg-mui 0.4.5\033n\n\n"
         "The AmigaPKG package manager for AmigaOS 3.x.\n"
         "Browse, install, update, and remove software\n"
         "from the signed AmigaPKG catalog.\n\n"
@@ -713,7 +734,7 @@ static int build_app(void)
     /* Category labels for the cycle: harvested once from the seeded index. */
     {
         aidx_index idx;
-        char *text = read_file(AMIPKG_INDEX_PATH);
+        char *text = read_file(amipkg_data_path("packages.json"));
         size_t i;
         if (text && aidx_parse(text, &idx) == 0) {
             for (i = 0; i < idx.count; i++) note_category(idx.entries[i].category);
@@ -901,7 +922,7 @@ static int gui_run(void)
     ULONG tsig = 0;
     int timer_ok = 0, rc = 20;
 
-    trace("start (0.4.4)");
+    trace("start (0.4.5)");
     amipkg_bridge_assigns();
     trace("assign bridge done");
 
@@ -1060,7 +1081,7 @@ static int gui_run(void)
             case ID_ADOPT:   action_adopt(); break;
             case ID_ABOUT:   action_about(); break;
             case ID_DOCS:
-                SystemTags((STRPTR)"Run >NIL: SYS:Utilities/MultiView AMIPKG:amipkg.guide", TAG_DONE);
+                open_docs();
                 set_status("Opening the documentation (MultiView)...");
                 break;
             default: break;

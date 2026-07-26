@@ -171,12 +171,12 @@ static void ensure_one(const char *path)
 void amipkg_ensure_dirs(void)
 {
     amipkg_bridge_assigns();
-    ensure_one("AMIPKG:cache");
-    ensure_one("AMIPKG:config");
-    ensure_one("AMIPKG:db");
-    ensure_one("AMIPKG:db/files");
-    ensure_one("AMIPKG:db/scripts");
-    ensure_one("AMIPKG:db/assigns");
+    ensure_one(amipkg_data_path("cache"));
+    ensure_one(amipkg_data_path("config"));
+    ensure_one(amipkg_data_path("db"));
+    ensure_one(amipkg_data_path("db/files"));
+    ensure_one(amipkg_data_path("db/scripts"));
+    ensure_one(amipkg_data_path("db/assigns"));
 }
 
 /* Free bytes on the volume holding `path` (e.g. "SYS:" / "AMIPKG:cache/").
@@ -231,7 +231,7 @@ long amipkg_adopt_inventory(const char *id, const char *drawer)
     char rp[192];
     FILE *f;
     n = walk_tree(drawer, "", pool, is_dir, ARUN_MAX_OPS, 0);
-    snprintf(rp, sizeof rp, AMIPKG_DB_PREFIX "files/%s.files", id);
+    snprintf(rp, sizeof rp, "%sdb/files/%s.files", amipkg_prefix(), id);
     f = fopen(rp, "w");
     if (!f) return -1;
     for (i = 0; i < n; i++) {
@@ -342,10 +342,19 @@ size_t amipkg_execute(const arun_plan *plan, const char *extract_dir,
              * e.g. "AMIPKG:amipkg" (self-update into the home drawer);
              * everything else stays boot_root-relative. */
             const char *root = strchr(op->dest, ':') ? "" : boot_root;
+            const char *destp = op->dest;
+            char xlat[300];
+            /* "AMIPKG:x" is a NAMESPACE for "amipkg's home", not a literal
+             * assign - translate it to the runtime prefix (PROGDIR: on
+             * standalone installs, where no assign exists at all). */
+            if (strncmp(destp, "AMIPKG:", 7) == 0) {
+                snprintf(xlat, sizeof xlat, "%s%s", amipkg_prefix(), destp + 7);
+                destp = xlat;
+            }
             snprintf(src, sizeof src, "%s/%s", extract_dir, op->src);
-            snprintf(dst, sizeof dst, "%s%s", root, op->dest);
+            snprintf(dst, sizeof dst, "%s%s", root, destp);
             if (copy_file(src, dst) && written < max) {
-                snprintf(out_paths[written], 256, "%s%s", root, op->dest);
+                snprintf(out_paths[written], 256, "%s%s", root, destp);
                 written++;
             }
             break;

@@ -48,11 +48,12 @@ Install
 
 amipkg LIVES IN THAT DRAWER (like MUI:) - nothing is copied anywhere
 else, and NOTHING is written to your Startup-Sequence or User-Startup.
-The AMIPKG: assign points at the drawer; catalog, cache and receipt DB
-sit next to the binaries. Every amipkg program sets the assign up
-itself on every start - even if you skip Install and just launch a
-binary, it works. (Shell tip with plain Install: CD into the
-drawer first - or use Install-System, which adds the path for you.)
+Catalog, cache and receipt DB sit right next to the binaries, and the
+programs find them there by themselves: NO assign is created, NOTHING
+is locked - you can even skip Install and just double-click a binary.
+Move the drawer anytime; everything moves with it. (Shell tip with
+plain Install: CD into the drawer first - or use Install-System, which
+adds an optional assign + path for you.)
 
 
 Using it - command line
@@ -108,8 +109,9 @@ the signed catalog. A tampered catalog or archive is refused.
 Uninstall amipkg
 ----------------
     Delete the drawer you unpacked amipkg into. That is ALL - amipkg
-    never touches any system file. (If the Shell says the drawer is in
-    use: `Assign AMIPKG: REMOVE` first - the session assign holds a lock.)
+    never touches any system file and holds no lock on the drawer.
+    (Only if you ran Install-System: remove its marked block from
+    S:User-Startup and `Assign AMIPKG: REMOVE` first.)
 
 
 Repository / feedback

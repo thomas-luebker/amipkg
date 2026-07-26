@@ -49,12 +49,12 @@
 #include "../core/aindex.h"
 #include "../core/aver.h"
 
-#define AMIPKG_GUI_VERSION "amipkg-gui 0.4.4"
+#define AMIPKG_GUI_VERSION "amipkg-gui 0.4.5"
 
 /* AmigaOS Version-command tag: `Version SYS:Tools/amipkg-gui` reports the
  * exact build - essential for tester feedback. `used` keeps -Os from
  * discarding the unreferenced constant. */
-static const char verstag[] __attribute__((used)) = "$VER: amipkg-gui 0.4.4 (26.7.2026)";
+static const char verstag[] __attribute__((used)) = "$VER: amipkg-gui 0.4.5 (26.7.2026)";
 
 struct IntuitionBase *IntuitionBase = NULL;
 struct Library       *GadToolsBase  = NULL;
@@ -176,6 +176,27 @@ static int contains_ci(const char *hay, const char *needle)
 /* The CLI binary to shell out to. Standalone home first (AMIPKG:amipkg --
  * amipkg lives in the drawer it was unpacked into), then the Amiga-Imager
  * image location (C:amipkg). Resolved once, after the assign bridge ran. */
+
+/* Launch the AmigaGuide manual. MultiView is a SEPARATE process, so
+ * "PROGDIR:" would resolve to MULTIVIEW's drawer - build the absolute
+ * path of OUR drawer when the home is PROGDIR:-based (no assign). */
+static void open_docs(void)
+{
+    char cmd[400], dir[256];
+    if (strcmp(amipkg_prefix(), "PROGDIR:") == 0) {
+        BPTR pd = GetProgramDir();
+        dir[0] = 0;
+        if (!pd || !NameFromLock(pd, (STRPTR)dir, sizeof dir)) dir[0] = 0;
+        if (dir[0]) {
+            snprintf(cmd, sizeof cmd,
+                     "Run >NIL: SYS:Utilities/MultiView \"%s%samipkg.guide\"",
+                     dir, dir[strlen(dir) - 1] == ':' ? "" : "/");
+        } else
+            snprintf(cmd, sizeof cmd, "Run >NIL: SYS:Utilities/MultiView PROGDIR:amipkg.guide");
+    } else
+        snprintf(cmd, sizeof cmd, "Run >NIL: SYS:Utilities/MultiView %samipkg.guide", amipkg_prefix());
+    SystemTags((STRPTR)cmd, TAG_DONE);
+}
 static const char *cli_path(void)
 {
     static char path[20] = "";
@@ -441,7 +462,7 @@ static void rebuild_list(void)
          * the filter cycle is populated before the first switch to Available. */
         if (g_ncats == 0) {
             aidx_index idx;
-            char *text = read_file(AMIPKG_INDEX_PATH);
+            char *text = read_file(amipkg_data_path("packages.json"));
             if (text && aidx_parse(text, &idx) == 0) {
                 for (i = 0; i < idx.count; i++) note_category(idx.entries[i].category);
                 aidx_free(&idx);
@@ -450,7 +471,7 @@ static void rebuild_list(void)
         }
     } else {
         aidx_index idx;
-        char *text = read_file(AMIPKG_INDEX_PATH);
+        char *text = read_file(amipkg_data_path("packages.json"));
         if (text && aidx_parse(text, &idx) == 0) {
             static const aidx_entry *order[MAX_PKGS * 2];
             size_t norder = 0;
@@ -545,7 +566,7 @@ static void action_update_catalog(void)
 static void action_check(void)
 {
     static aidx_index idx;
-    char *text = read_file(AMIPKG_INDEX_PATH);
+    char *text = read_file(amipkg_data_path("packages.json"));
     char msg[2048];
     size_t used = 0, i;
     int updates = 0;
@@ -605,7 +626,7 @@ static void action_info(void)
     int ins;
     if (g_selected < 0 || (size_t)g_selected >= g_nrows) { set_status("Select a package first."); return; }
     id = g_rowid[g_selected];
-    text = read_file(AMIPKG_INDEX_PATH);
+    text = read_file(amipkg_data_path("packages.json"));
     if (!text) { set_status("No catalog yet - click Update Catalog."); return; }
     if (aidx_parse(text, &idx) != 0) { free(text); set_status("The seeded index is unreadable."); return; }
     free(text);
@@ -1050,7 +1071,7 @@ static int open_ui(void)
     h = UI_MARGIN + (fh + 6) + UI_GAP + (fh + 6) + UI_GAP
         + (UI_ROWS * (fh + 2)) + UI_GAP + (fh + 6) + UI_GAP + (fh + 6) + UI_MARGIN;
     {   /* Restore the last window position (saved on close). */
-        char *pos = read_file(AMIPKG_CONFIG_DIR "winpos");
+        char *pos = read_file(amipkg_data_path("config/winpos"));
         if (pos) {
             long x = atol(pos), y = 0;
             char *sp = strchr(pos, ' ');
@@ -1091,7 +1112,7 @@ static void close_ui(void)
 {
     if (g_win) {
         /* Remember the window position for the next run. */
-        FILE *f = fopen(AMIPKG_CONFIG_DIR "winpos", "w");
+        FILE *f = fopen(amipkg_data_path("config/winpos"), "w");
         if (f) { fprintf(f, "%d %d\n", g_win->LeftEdge, g_win->TopEdge); fclose(f); }
     }
     if (g_win && g_menu) ClearMenuStrip(g_win);
@@ -1107,7 +1128,7 @@ static int dispatch_menu(UWORD menuNum, UWORD itemNum)
     if (menuNum == MENU_PROJECT) {
         if (itemNum == PROJ_ABOUT) action_about();
         else if (itemNum == PROJ_DOCS) {
-            SystemTags((STRPTR)"Run >NIL: SYS:Utilities/MultiView AMIPKG:amipkg.guide", TAG_DONE);
+            open_docs();
             set_status("Opening the documentation (MultiView)...");
         }
         else if (itemNum == PROJ_QUIT) return 1;

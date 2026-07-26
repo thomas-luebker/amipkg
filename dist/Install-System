@@ -6,7 +6,8 @@
 ; Same home-drawer install as `Install` (amipkg stays IN THIS DRAWER),
 ; PLUS boot integration: the AMIPKG: assign and a Path entry are added to
 ; S:User-Startup, so after a reboot `amipkg` works in EVERY Shell without
-; CD'ing here first.
+; CD'ing here first. (Since 0.4.5 the assign is PURE CONVENIENCE - amipkg
+; finds its data next to its binaries either way.)
 ;
 ; This is the ONLY thing amipkg ever writes outside its drawer, it happens
 ; only because you ran THIS script, and it is one clearly marked block -

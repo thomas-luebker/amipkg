@@ -4,13 +4,14 @@
 ; amipkg - standalone setup for AmigaOS 3.x
 ;
 ; amipkg LIVES IN THIS DRAWER - wherever you unpacked or copied it (like
-; MUI:). Nothing is copied anywhere else. This script just:
-;   1. assigns AMIPKG: to this drawer (amipkg re-creates it itself on
-;      every start - nothing is written to your Startup-Sequence)
-;   2. creates the data drawers (cache / config / db)
-;   3. seeds amipkg's own receipt so self-update works from day one
-; The signed catalog (packages.json) already sits here, so amipkg works
-; OFFLINE immediately.
+; MUI:). Since 0.4.5 it finds its data RIGHT NEXT TO ITS BINARIES: no
+; assign is created, nothing is locked, nothing outside this drawer is
+; ever touched. This script only:
+;   1. creates the data drawers (cache / config / db)
+;   2. seeds amipkg's own receipt so self-update works from day one
+; Strictly speaking even THIS is optional - the programs create what they
+; need on first run. The signed catalog (packages.json) already sits here,
+; so amipkg works OFFLINE immediately.
 ;
 ;   Double-click the Install icon, or: CD into this drawer, Execute Install
 ; ---------------------------------------------------------------------------
@@ -18,58 +19,57 @@ FailAt 21
 
 Echo "Setting up amipkg in this drawer ..."
 
-; 1. This drawer IS the home: assign now (first amipkg run persists it).
-Assign >NIL: AMIPKG: ""
-Path >NIL: "" ADD
-
 Protect >NIL: amipkg +e
 Protect >NIL: amipkg-gui +e
 Protect >NIL: amipkg-mui +e
 
-; 2. Data drawers next to the binaries.
-If Not Exists AMIPKG:cache
-  MakeDir >NIL: AMIPKG:cache
+; 1. Data drawers next to the binaries.
+If Not Exists cache
+  MakeDir >NIL: cache
 EndIf
-If Not Exists AMIPKG:config
-  MakeDir >NIL: AMIPKG:config
+If Not Exists config
+  MakeDir >NIL: config
 EndIf
-If Not Exists AMIPKG:db
-  MakeDir >NIL: AMIPKG:db
+If Not Exists db
+  MakeDir >NIL: db
 EndIf
-If Not Exists AMIPKG:db/files
-  MakeDir >NIL: AMIPKG:db/files
+If Not Exists db/files
+  MakeDir >NIL: db/files
 EndIf
-If Not Exists AMIPKG:db/scripts
-  MakeDir >NIL: AMIPKG:db/scripts
+If Not Exists db/scripts
+  MakeDir >NIL: db/scripts
 EndIf
 
-; 3. Seed amipkg's own receipt so `amipkg check` / `amipkg upgrade amipkg`
+; 2. Seed amipkg's own receipt so `amipkg check` / `amipkg upgrade amipkg`
 ;    manage it from day one (self-update). Guarded against re-runs.
-If Not Exists AMIPKG:db/installed.txt
-  Echo NOLINE "" >AMIPKG:db/installed.txt
+;    PROGDIR: paths resolve from whichever amipkg binary is running -
+;    they stay correct even if you move the drawer later.
+If Not Exists db/installed.txt
+  Echo NOLINE "" >db/installed.txt
 EndIf
-Search >NIL: AMIPKG:db/installed.txt "amipkg|"
+Search >NIL: db/installed.txt "amipkg|"
 If Warn
-  Echo "amipkg|0.4.4|1|0" >>AMIPKG:db/installed.txt
-  Echo "AMIPKG:amipkg" >AMIPKG:db/files/amipkg.files
-  Echo "AMIPKG:amipkg-gui" >>AMIPKG:db/files/amipkg.files
-  Echo "AMIPKG:amipkg-gui.info" >>AMIPKG:db/files/amipkg.files
-  Echo "AMIPKG:amipkg-mui" >>AMIPKG:db/files/amipkg.files
-  Echo "AMIPKG:amipkg-mui.info" >>AMIPKG:db/files/amipkg.files
-  Echo "AMIPKG:amipkg.guide" >>AMIPKG:db/files/amipkg.files
+  Echo "amipkg|0.4.5|1|0" >>db/installed.txt
+  Echo "PROGDIR:amipkg" >db/files/amipkg.files
+  Echo "PROGDIR:amipkg-gui" >>db/files/amipkg.files
+  Echo "PROGDIR:amipkg-gui.info" >>db/files/amipkg.files
+  Echo "PROGDIR:amipkg-mui" >>db/files/amipkg.files
+  Echo "PROGDIR:amipkg-mui.info" >>db/files/amipkg.files
+  Echo "PROGDIR:amipkg.guide" >>db/files/amipkg.files
 EndIf
 
-; 4. First run: health check (the binaries set the assign up themselves
-;    on every start - no system file is ever touched).
+; 3. Health check.
 amipkg doctor
 
 Echo "*N========================================================"
-Echo "amipkg is set up IN THIS DRAWER (assign: AMIPKG:)."
+Echo "amipkg is set up IN THIS DRAWER - no assign, no lock,"
+Echo "nothing outside it was touched."
 Echo "  CLI : amipkg            (try:  amipkg avail )"
 Echo "  GUI : amipkg-gui        (GadTools, no dependencies)"
 Echo "        amipkg-mui        (MUI 3.8+ - the polished one)"
 Echo "  Catalog: 100+ packages (bundled, signed, works offline)"
-Echo "*NYou can move this drawer later: run Install here again."
+Echo "*NMove the drawer anytime - everything moves with it."
+Echo "Uninstall = delete the drawer. That is all."
 Echo "*NBring your TCP/IP stack ONLINE, then to refresh + install:"
 Echo "  amipkg update           (fetch the latest signed catalog)"
 Echo "  amipkg avail <term>     (search)"
