@@ -284,7 +284,7 @@ static void rebuild_list(void)
             }
             aidx_free(&idx);
         } else {
-            set_status("No catalog yet - click Update Catalog (needs network).");
+            set_status("No catalog yet - click Update Catalog.");
         }
         if (text) free(text);
     }
@@ -387,15 +387,34 @@ static int run_async(const char *cmd, const char *verb)
     return 1;
 }
 
+
+/* Friendlier progress: the http layer's raw download lines
+ * ("  123/456K (27%)") become "Downloading: 27% (123 of 456 KB)";
+ * everything else is shown as-is. */
+static void show_progress_line(const char *line)
+{
+    long got, total, pct;
+    if (sscanf(line, " %ld/%ldK (%ld%%)", &got, &total, &pct) == 3) {
+        char b[96];
+        snprintf(b, sizeof b, "Downloading: %ld%%  (%ld of %ld KB)", pct, got, total);
+        set_progress(b);
+    } else set_progress(line);
+}
 static void poll_async(void)
 {
     char line[160];
     BPTR fh;
     if (!g_busy) return;
     g_busy_ticks++;
+    /* Ticking status once a second - visible proof the operation is alive. */
+    if ((g_busy_ticks % 4) == 0) {
+        char b[96];
+        snprintf(b, sizeof b, "%s running... %ld s", g_busy_verb, g_busy_ticks / 4);
+        set_status(b);
+    }
     if ((g_busy_ticks % 2) == 0) {          /* ~2x/s at a 250 ms heartbeat */
         tail_line(ASYNC_OUT, line, sizeof line);
-        if (line[0]) set_progress(line);
+        if (line[0]) show_progress_line(line);
     }
     fh = Open((STRPTR)ASYNC_DONE, MODE_OLDFILE);
     if (fh) {
@@ -448,7 +467,7 @@ static int req_yesno(const char *title, const char *gadgets, const char *body)
 
 static void action_update_catalog(void)
 {
-    set_status("Updating catalog... (needs a TCP/IP stack up)");
+    set_status("Updating catalog...");
     char cmd[64];
     snprintf(cmd, sizeof cmd, "%s update", cli_path());
     run_async(cmd, "Catalog update");
@@ -467,7 +486,7 @@ static void action_upall(void)
     if (g_busy) { set_status("An operation is already running."); return; }
     if (!req_yesno("Update All", "_Update|_Cancel",
                    "Upgrade every out-of-date package?\n\n"
-                   "Downloads + reinstalls the newer versions\n(needs a TCP/IP stack up)."))
+                   "Downloads + reinstalls the newer versions."))
         { set_status("Update cancelled."); return; }
     char cmd[64];
     snprintf(cmd, sizeof cmd, "%s upgrade", cli_path());
@@ -483,7 +502,7 @@ static void action_info(void)
     Row *r = selected_row();
     if (!r) { set_status("Select a package first."); return; }
     text = read_file(AMIPKG_INDEX_PATH);
-    if (!text) { set_status("No catalog yet - click Update Catalog (needs network)."); return; }
+    if (!text) { set_status("No catalog yet - click Update Catalog."); return; }
     if (aidx_parse(text, &idx) != 0) { free(text); set_status("Seeded index unreadable."); return; }
     free(text);
     e = aidx_find(&idx, r->id);

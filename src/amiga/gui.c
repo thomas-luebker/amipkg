@@ -272,6 +272,19 @@ static int run_async(const char *cmd, const char *verb)
     return 1;
 }
 
+
+/* Friendlier progress: the http layer's raw download lines
+ * ("  123/456K (27%)") become "Downloading: 27% (123 of 456 KB)";
+ * everything else is shown as-is. */
+static void show_progress_line(const char *line)
+{
+    long got, total, pct;
+    if (sscanf(line, " %ld/%ldK (%ld%%)", &got, &total, &pct) == 3) {
+        char b[96];
+        snprintf(b, sizeof b, "Downloading: %ld%%  (%ld of %ld KB)", pct, got, total);
+        set_progress(b);
+    } else set_progress(line);
+}
 /* One INTUITICKS heartbeat while an async op runs. */
 static void poll_async(void)
 {
@@ -279,10 +292,16 @@ static void poll_async(void)
     BPTR fh;
     if (!g_busy) return;
     g_busy_ticks++;
+    /* Ticking status once a second - visible proof the operation is alive. */
+    if ((g_busy_ticks % 10) == 0) {
+        char b[96];
+        snprintf(b, sizeof b, "%s running... %ld s", g_busy_verb, g_busy_ticks / 10);
+        set_status(b);
+    }
     /* Stream progress ~2x/s (ticks fire ~10x/s). */
     if ((g_busy_ticks % 5) == 0) {
         tail_line(ASYNC_OUT, line, sizeof line);
-        if (line[0]) set_progress(line);
+        if (line[0]) show_progress_line(line);
     }
     fh = Open((STRPTR)ASYNC_DONE, MODE_OLDFILE);
     if (fh) {
@@ -454,7 +473,7 @@ static void rebuild_list(void)
             }
             aidx_free(&idx);
         } else {
-            set_status("No catalog yet - click Update Catalog (needs network).");
+            set_status("No catalog yet - click Update Catalog.");
         }
         if (text) free(text);
     }
@@ -511,7 +530,7 @@ static void action_refresh(void);   /* defined below */
  * `C:amipkg update` (needs a TCP/IP stack up). */
 static void action_update_catalog(void)
 {
-    set_status("Updating catalog... (needs a TCP/IP stack up)");
+    set_status("Updating catalog...");
     char cmd[64];
     snprintf(cmd, sizeof cmd, "%s update", cli_path());
     run_async(cmd, "Catalog update");
@@ -527,7 +546,7 @@ static void action_check(void)
     static rcpt_installed inst[MAX_PKGS];
     size_t ninst;
     set_status("Checking for updates...");
-    if (!text) { set_status("No catalog yet - click Update Catalog (needs network)."); return; }
+    if (!text) { set_status("No catalog yet - click Update Catalog."); return; }
     if (aidx_parse(text, &idx) != 0) { free(text); set_status("The seeded index is unreadable."); return; }
     free(text);
     ninst = load_installed(inst, MAX_PKGS);
@@ -559,7 +578,7 @@ static void action_upgrade(void)
     if (g_busy) { set_status("An operation is already running."); return; }
     if (!req_confirm("Update All",
                      "Upgrade every out-of-date package?\n\nDownloads + reinstalls the newer\n"
-                     "versions (needs a TCP/IP stack up).", "Update|Cancel")) {
+                     "versions.", "Update|Cancel")) {
         set_status("Update cancelled."); return;
     }
     set_status("Updating all packages...");
@@ -581,7 +600,7 @@ static void action_info(void)
     if (g_selected < 0 || (size_t)g_selected >= g_nrows) { set_status("Select a package first."); return; }
     id = g_rowid[g_selected];
     text = read_file(AMIPKG_INDEX_PATH);
-    if (!text) { set_status("No catalog yet - click Update Catalog (needs network)."); return; }
+    if (!text) { set_status("No catalog yet - click Update Catalog."); return; }
     if (aidx_parse(text, &idx) != 0) { free(text); set_status("The seeded index is unreadable."); return; }
     free(text);
     ninst = load_installed(inst, MAX_PKGS);
@@ -756,11 +775,11 @@ static void action_install(void)
     run_sync_capture(cmd, plan, sizeof plan);
     if (plan[0])
         snprintf(body, sizeof body,
-                 "Install '%s'?\n\n%s\nDownloads are SHA-256-verified.\nNeeds a TCP/IP stack up.",
+                 "Install '%s'?\n\n%s\nDownloads are SHA-256-verified.",
                  id, plan);
     else
         snprintf(body, sizeof body,
-                 "Install '%s'?\n\nDownloads + verifies the archive and\ninstalls it (with any dependencies).\nNeeds a TCP/IP stack up.",
+                 "Install '%s'?\n\nDownloads + verifies the archive and\ninstalls it (with any dependencies).",
                  id);
     if (!req_confirm("Install Package", body, "Install|Cancel")) { set_status("Install cancelled."); return; }
     snprintf(body, sizeof body, "Installing %s...", id);

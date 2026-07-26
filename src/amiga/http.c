@@ -60,8 +60,7 @@ int http_available(void)
     if (SocketBase) return 1;
     SocketBase = OpenLibrary((STRPTR)"bsdsocket.library", 4);
     if (!SocketBase) {
-        printf("amipkg: no TCP/IP stack running.\n");
-        printf("Bring your network up first (GoOnline / your stack's connect), then retry.\n");
+        printf("amipkg: you are offline - connect first, then retry.\n");
         return 0;
     }
     return 1;
