@@ -1,0 +1,40 @@
+.BRA {
+.KET }
+; ---------------------------------------------------------------------------
+; amipkg - INTEGRATED setup (optional alternative to plain `Install`)
+;
+; Same home-drawer install as `Install` (amipkg stays IN THIS DRAWER),
+; PLUS boot integration: the AMIPKG: assign and a Path entry are added to
+; S:User-Startup, so after a reboot `amipkg` works in EVERY Shell without
+; CD'ing here first.
+;
+; This is the ONLY thing amipkg ever writes outside its drawer, it happens
+; only because you ran THIS script, and it is one clearly marked block -
+; remove those lines from S:User-Startup to un-integrate at any time.
+; Prefer zero system footprint? Use plain `Install` instead.
+;
+;   Double-click the Install-System icon, or: Execute Install-System
+; ---------------------------------------------------------------------------
+FailAt 21
+
+; 1. The normal in-drawer setup (assign for this session, data drawers,
+;    self-update receipt, health check).
+Execute Install
+
+; 2. Boot integration (idempotent - skipped when AMIPKG: is already there).
+CD >ENV:AmiPKGHome
+Search >NIL: S:User-Startup "AMIPKG:"
+If Warn
+  Echo "" >>S:User-Startup
+  Echo "; amipkg home (added by Install-System - delete this block to un-integrate)" >>S:User-Startup
+  Echo "If Exists *"$AmiPKGHome*"" >>S:User-Startup
+  Echo "  Assign >NIL: AMIPKG: *"$AmiPKGHome*"" >>S:User-Startup
+  Echo "  Path >NIL: AMIPKG: ADD" >>S:User-Startup
+  Echo "EndIf" >>S:User-Startup
+  Echo "*NIntegrated: AMIPKG: + Shell path will be set at every boot."
+Else
+  Echo "*NAlready integrated (S:User-Startup mentions AMIPKG:) - nothing added."
+EndIf
+Delete >NIL: ENV:AmiPKGHome
+
+Echo "Moved the drawer later? Delete the old block from S:User-Startup and run Install-System again."

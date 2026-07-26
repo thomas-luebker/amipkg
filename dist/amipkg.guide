@@ -1,0 +1,181 @@
+@database amipkg.guide
+@$VER: amipkg.guide 0.4 (26.7.2026)
+@author "Thomas Luebker"
+@node MAIN "amipkg - the AmigaPKG package manager"
+
+@{b}amipkg - the package manager for AmigaOS 3.x@{ub}
+
+Install, update and remove software from a curated, cryptographically
+signed catalog of 100+ packages - straight on your Amiga.
+
+  @{" What is amipkg?        " link ABOUT}
+  @{" Requirements           " link REQ}
+  @{" The command line       " link CLI}
+  @{" The GUIs (two!)        " link GUI}
+  @{" Adopting existing apps " link ADOPT}
+  @{" How the trust works    " link TRUST}
+  @{" Troubleshooting        " link TROUBLE}
+
+Catalog + package submissions:
+  https://github.com/thomas-luebker/amiga-pkg
+
+(c) 2026 Thomas Luebker. amipkg is part of the Amiga Imager project
+(https://amiga-imager.com) but runs on ANY AmigaOS 3.x system.
+@endnode
+
+@node ABOUT "What is amipkg?"
+@{b}What is amipkg?@{ub}
+
+Think "apt or Homebrew for your A500/A1200/A4000":
+
+ - A curated catalog of 100+ freely distributable classics and tools
+   (players, commodities, internet apps, dev tools, games).
+ - @{b}Dependency resolution@{ub}: installing an app also installs what it
+   needs (MUI, class libraries, ...), picking the right CPU build for
+   your machine (68000..68060).
+ - @{b}Clean removal@{ub}: a receipt database records every file and every
+   User-Startup change; remove deletes only what was installed and
+   strips its boot-script blocks.
+ - @{b}Self-updating@{ub}: `amipkg upgrade amipkg`.
+ - Everything is verified: see @{"How the trust works" link TRUST}.
+@endnode
+
+@node REQ "Requirements"
+@{b}Two setups@{ub}: plain @{b}Install@{ub} keeps everything in the drawer
+(zero system footprint); @{b}Install-System@{ub} additionally adds the
+AMIPKG: assign + Shell path to S:User-Startup (one marked block).
+
+@{b}Requirements@{ub}
+
+ - AmigaOS 3.0 or newer. amipkg itself runs on a stock 68000.
+ - C:lha - the LhA unarchiver (standard on almost every system).
+ - A TCP/IP stack with bsdsocket.library, ONLY for downloads
+   (Roadshow, AmiTCP, Miami, or an emulator's built-in bsdsocket).
+   Browsing the bundled catalog works offline.
+ - Optional: @{b}AmiSSL 5.x@{ub} enables downloads from https-only hosts
+   (GitHub releases). Everything on Aminet works without it.
+ - Optional: @{b}MUI 3.8+@{ub} for the MUI front-end
+   (`amipkg install mui38` bootstraps it).
+
+Some PACKAGES need more (68020+, more RAM, newer Kickstart) - amipkg
+checks the requirements and refuses clearly instead of installing
+something that cannot run.
+@endnode
+
+@node CLI "The command line"
+@{b}The command line@{ub}
+
+  amipkg update              fetch the latest signed catalog
+  amipkg avail [term]        list / search the catalog
+  amipkg info <id>           details for one package
+  amipkg install <id>        download + verify + install WITH deps
+  amipkg install <id> DRYRUN preview the plan, change nothing
+  amipkg adopt <id> <drawer> manage an app you ALREADY have
+  amipkg list                what is installed
+  amipkg check               which installed packages have updates
+  amipkg upgrade [<id>]      update everything (or one package);
+                             `amipkg upgrade amipkg` self-updates
+  amipkg remove <id>         clean uninstall (receipt-driven)
+  amipkg doctor              audit installs against the receipts
+  amipkg dir [<path>]        show/set the install drawer
+                             (default SYS:Programs)
+
+Commands are case-sensitive: `install`, not `Install`.
+
+Downloads resume after an interruption, and every archive must match
+the SHA-256 recorded in the signed catalog or it is refused.
+@endnode
+
+@node GUI "The GUIs"
+@{b}Two front-ends - pick your flavour@{ub}
+
+@{b}amipkg-mui@{ub} (needs MUI 3.8+)
+  The polished one: resizable window, real list columns, description
+  pane. Everything the CLI can do, point-and-click.
+
+@{b}amipkg-gui@{ub} (GadTools)
+  Runs on ANY stock 3.x system with zero dependencies.
+
+Both offer the same features:
+ - Installed / Available views, Find box, category filter,
+   By Name / Newest sorting.
+ - Install shows the resolved plan (dependencies + download sizes)
+   BEFORE you confirm.
+ - Installs run in the background with live progress - the window
+   stays usable.
+ - Run button: launch an installed program directly.
+ - Update Catalog / Check Updates / Update All, Info (double-click a
+   row), Remove, Adopt Existing, Install Drawer - all in the menus.
+@endnode
+
+@node ADOPT "Adopting existing apps"
+@{b}You already have the app? Adopt it.@{ub}
+
+You installed Visage years ago in Work:Grafik/Visage? Tell amipkg:
+
+  amipkg adopt visage Work:Grafik/Visage
+  amipkg adopt visage Work:Grafik/Visage 39.21   (if you know the version)
+
+amipkg inventories the drawer into its receipt database (with
+checksums), links it to the catalog entry, and remembers WHERE it
+lives. From then on:
+
+ - `amipkg check` watches it for updates,
+ - upgrades land IN PLACE (Work:Grafik/), not in SYS:Programs,
+ - `amipkg remove` can cleanly uninstall it.
+
+In the GUIs: select the package, then Package menu ->
+"Adopt Existing..." and pick the drawer.
+@endnode
+
+@node TRUST "How the trust works"
+@{b}How the trust works@{ub}
+
+1. The catalog (packages.json) is signed OFFLINE with the project's
+   Ed25519 key. Your Amiga verifies that signature against a built-in
+   public key before trusting a single byte - `amipkg update` refuses
+   a tampered catalog.
+
+2. Every package archive's SHA-256 is recorded INSIDE that signed
+   catalog. Every download must match it or it is deleted.
+
+3. Because of 1+2, the transport does not need to be trusted: plain
+   HTTP (which classic Amigas need - no TLS without AmiSSL) is safe,
+   and so are mirrors and redirects.
+
+Nothing reaches the catalog unsigned: packages are submitted as pull
+requests, reviewed by a maintainer (licensing + any native-code
+lines), and only then signed in.
+@endnode
+
+@node TROUBLE "Troubleshooting"
+@{b}Troubleshooting@{ub}
+
+@{b}"no TCP/IP stack running"@{ub}
+  Bring your network up first (GoOnline / your stack), then retry.
+  On FS-UAE: enable "UAE bsdsocket.library" in the Launcher.
+
+@{b}"this URL needs https, and AmiSSL is not installed"@{ub}
+  That package is hosted on an https-only site (e.g. GitHub).
+  Install AmiSSL 5.x (Aminet util/libs/amissl), then retry.
+
+@{b}"not enough space"@{ub}
+  amipkg checks free disk space BEFORE downloading. Free some space
+  or change the install drawer (`amipkg dir <path>`).
+
+@{b}"needs a 68020 or better" / "needs Kickstart 3.2+"@{ub}
+  The package declares hardware/OS floors your machine does not
+  meet. That is the check working as intended.
+
+@{b}Moved the amipkg drawer?@{ub}
+  Self-contained setup: nothing to do - the assign is re-created
+  from the drawer's location every start. Integrated setup: delete
+  the old "amipkg home" block from S:User-Startup and run
+  Install-System again from the new location.
+
+@{b}A package misbehaves after manual file edits@{ub}
+  `amipkg doctor` lists modified/missing files per package;
+  `amipkg install <id>` repairs it.
+
+Report bugs: https://github.com/thomas-luebker/amiga-pkg/issues
+@endnode

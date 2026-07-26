@@ -1,0 +1,64 @@
+Short:        Package manager for AmigaOS 3.x (signed catalog)
+Author:       thomas@amiga-imager.com (Thomas Luebker)
+Uploader:     thomas@amiga-imager.com (Thomas Luebker)
+Type:         util/pack
+Version:      0.3
+Architecture: m68k-amigaos >= 3.0
+Distribution: Aminet
+URL:          https://github.com/thomas-luebker/amiga-pkg
+
+amipkg - install, update and remove software on your Amiga
+==========================================================
+
+amipkg is a package manager for classic AmigaOS 3.x - think "apt/Homebrew
+for your A500/A1200/A4000". It installs, updates and removes software from
+a curated catalog of 100+ freely-distributable classics and tools (players,
+commodities, internet apps, dev tools, games), resolved and downloaded
+straight on your Amiga.
+
+FEATURES
+
+ * Curated, CRYPTOGRAPHICALLY SIGNED catalog: the index is Ed25519-signed
+   offline and verified on your Amiga; every download is checked against a
+   SHA-256 pinned in that signed catalog. A tampered index or archive is
+   refused. No other Amiga tool does this.
+ * Dependency resolution: installs what a package needs first, picking the
+   right CPU build for your machine (68000..68060 via AttnFlags).
+ * Clean removal: a receipt database records every file and boot-script
+   change; `amipkg remove` deletes only what it installed and strips its
+   User-Startup blocks. `amipkg doctor` audits your installs.
+ * Both worlds: a fast CLI (list/avail/info/install/upgrade/remove/update/
+   doctor, DRYRUN preview) and a GadTools GUI (browse, search, category
+   filter, newest-first, one-click install with live progress, Run button).
+ * Self-updating: `amipkg upgrade amipkg`.
+ * Runs on a stock 68000 with AmigaOS 3.0+; guaranteed 128 KB stack via
+   StackSwap regardless of your Shell settings.
+
+REQUIREMENTS
+
+ * AmigaOS 3.0+ (GadTools); C:lha (standard on almost every system)
+ * A TCP/IP stack with bsdsocket.library for downloads only - Roadshow,
+   AmiTCP, Miami, or an emulator's built-in bsdsocket. Browsing the bundled
+   catalog works offline.
+ * Optional: AmiSSL 5.x enables downloads from https-only hosts (GitHub);
+   everything on Aminet works without it.
+
+INSTALL
+
+Extract the archive and double-click "Install" (or `Execute Install` in a
+Shell). It copies C:amipkg + SYS:Tools/amipkg-gui, seeds the signed catalog
+for offline browsing, and adds the data assign to S:User-Startup.
+
+QUICK START
+
+  amipkg avail mod          ; search the catalog
+  amipkg install hippoplayer
+  amipkg check              ; anything outdated?
+  amipkg upgrade            ; update everything
+
+Package submissions are pull requests (pure Python tooling, no Amiga or Mac
+needed) reviewed and signed by a maintainer - Homebrew-style:
+https://github.com/thomas-luebker/amiga-pkg
+
+amipkg is part of the Amiga Imager project (https://amiga-imager.com) but
+runs on ANY AmigaOS 3.x system - no Amiga Imager required.

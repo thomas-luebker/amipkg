@@ -1,0 +1,70 @@
+/*
+ * store.h — amipkg on-image data access (receipt DB + seeded index paths).
+ *
+ * The small I/O + parse helpers shared by BOTH front-ends: the CLI (main.c)
+ * and the GadTools GUI (gui.c). Keeping them here means the two front-ends
+ * read the receipt DB and index through ONE implementation and cannot drift.
+ *
+ * Portable C (fopen/fread); on the host build the AMIPKG: paths simply
+ * don't resolve, which is fine — the host build is for logic testing.
+ */
+#ifndef AMIPKG_STORE_H
+#define AMIPKG_STORE_H
+
+#include <stddef.h>
+#include "receipts.h"
+
+/* The ONE data assign: AMIPKG: — it points at amipkg's HOME, the drawer
+ * where amipkg was unpacked or copied (like MUI:). Binaries, catalog, cache
+ * and receipt DB live together in that drawer. amipkg_bridge_assigns()
+ * creates it on EVERY run (PROGDIR:-based — nothing is written to any
+ * system file); on Amiga-Imager-built images it aliases the image's
+ * existing AMIGAIMAGER: assign instead (read-only compat — amipkg never
+ * creates the legacy name anywhere). */
+#define AMIPKG_DB_PREFIX   "AMIPKG:db/"
+#define AMIPKG_INDEX_PATH  "AMIPKG:packages.json"
+#define AMIPKG_CACHE_DIR   "AMIPKG:cache/"
+#define AMIPKG_CONFIG_DIR  "AMIPKG:config/"
+#define AMIPKG_INSTALLDIR_FILE "AMIPKG:config/installdir"
+#define AMIPKG_DEFAULT_INSTALLDIR "SYS:Programs"
+#define MAX_PKGS   128
+#define MAX_FILES  512
+
+/* Read a whole file into a malloc'd NUL-terminated buffer (caller frees).
+ * NULL on any error. */
+char *read_file(const char *path);
+
+/* SHA-256 of a file as lowercase hex (out_hex must hold 65 bytes).
+ * Returns 0 on success, nonzero if the file can't be read. */
+int sha256_of_file(const char *path, char out_hex[65]);
+
+/* Load the installed-packages receipt list (AMIPKG:db/installed.txt).
+ * Returns the count (0 if absent/empty). */
+size_t load_installed(rcpt_installed *out, size_t max);
+
+/* Load one package's recorded file inventory (files/<id>.files). */
+size_t load_files_for(const char *id, rcpt_file *out, size_t max);
+
+/* Resolve where generic (recipe-less) packages install to, in priority order:
+ *   1. the AMIPKG:config/installdir file (set via GUI / `amipkg dir`)
+ *   2. the AMIPKG_INSTALLDIR environment variable (setenv override)
+ *   3. the "SYS:Programs" default.
+ * Writes the trimmed path into out (size n). */
+void amipkg_get_installdir(char *out, size_t n);
+
+/* Persist the generic install dir to AMIPKG:config/installdir.
+ * Returns 0 on success. An empty/NULL path clears it (reverts to default). */
+int amipkg_set_installdir(const char *path);
+
+/* Per-PACKAGE install-dir override (config/dir-<id>) — set by `amipkg adopt`
+ * so upgrades land where the user already keeps the app. Falls back to the
+ * global dir when absent. */
+void amipkg_get_pkgdir(const char *id, char *out, size_t n);
+int amipkg_set_pkgdir(const char *id, const char *path);
+
+/* Resolve AMIPKG: (home-drawer bootstrap / image alias; AssignLock from
+ * whichever exists). No-op on the host build. Call once at startup —
+ * the CLI (ensure_dirs) and BOTH GUIs do. */
+void amipkg_bridge_assigns(void);
+
+#endif /* AMIPKG_STORE_H */

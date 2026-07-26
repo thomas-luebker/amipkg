@@ -1,0 +1,117 @@
+amipkg - the AmigaPKG package manager
+=====================================
+
+amipkg installs, updates and removes AmigaOS software from the AmigaPKG
+repository (a curated, signed catalog of 100+ freely-distributable Amiga
+programs from Aminet and elsewhere). It runs on ANY AmigaOS 3.x system - you
+do NOT need Amiga Imager.
+
+This bundle already contains the signed catalog, so browsing works OFFLINE
+straight after install; `amipkg update` refreshes it online.
+
+
+Requirements
+------------
+* AmigaOS 3.0 or newer.
+* C:lha         - the LhA unarchiver (standard on almost every system).
+* A TCP/IP stack that provides bsdsocket.library, ONLY for downloading
+  (Roadshow, AmiTCP, Miami, or an emulator's built-in bsdsocket). Browsing the
+  bundled catalog and removing packages need no network. Most downloads use
+  plain HTTP - the catalog is Ed25519-signed and verified on-device, and every
+  package archive is checked against its SHA-256 pinned in that signed catalog.
+* OPTIONAL: AmiSSL 5.x. When installed, amipkg can also download from
+  https-only hosts (GitHub releases etc.). Without it, https packages are
+  refused with a hint; everything on Aminet works without AmiSSL.
+* amipkg itself runs on a 68000; many PACKAGES need 68020+ / more RAM.
+
+
+Install
+-------
+1. Make a drawer and extract this archive into it, e.g. from a Shell:
+       MakeDir RAM:AmiPKG
+       LhA x amipkg.lha RAM:AmiPKG/
+2. Run ONE of the two setups (double-click its icon, or Execute it from
+   a Shell CD'd into the drawer):
+
+       Install          Self-contained (recommended to try it out):
+                        everything stays in this drawer, NOTHING outside
+                        it is touched - no Startup-Sequence, no User-
+                        Startup. The AMIPKG: assign is re-created by the
+                        programs themselves every time they run.
+                        Uninstall = delete the drawer.
+
+       Install-System   Integrated: same in-drawer install, PLUS one
+                        clearly marked block in S:User-Startup (assign +
+                        Shell path), so after a reboot `amipkg` works in
+                        every Shell directly. Delete the block to
+                        un-integrate.
+
+amipkg LIVES IN THAT DRAWER (like MUI:) - nothing is copied anywhere
+else, and NOTHING is written to your Startup-Sequence or User-Startup.
+The AMIPKG: assign points at the drawer; catalog, cache and receipt DB
+sit next to the binaries. Every amipkg program sets the assign up
+itself on every start - even if you skip Install and just launch a
+binary, it works. (Shell tip with plain Install: CD into the
+drawer first - or use Install-System, which adds the path for you.)
+
+
+Using it - command line
+-----------------------
+    amipkg avail             list every package in the catalog
+    amipkg avail <term>      search by id / name / category
+    amipkg info <id>         show details for one package
+    amipkg update            fetch the latest signed catalog (needs network)
+    amipkg install <id>      download + SHA-256-verify + install, WITH its
+                             dependencies (resolved for your CPU, deps first)
+    amipkg adopt <id> <drawer> [<ver>]
+                             you ALREADY have this app somewhere? Point amipkg
+                             at its drawer: it inventories the files and takes
+                             over updates/removal - upgrades land IN PLACE
+    amipkg list              list what you have installed
+    amipkg check             show which installed packages have updates
+    amipkg upgrade [<id>]    upgrade everything out of date (or just <id>);
+                             `amipkg upgrade amipkg` self-updates amipkg
+    amipkg remove <id>       uninstall (removes the files it installed)
+    amipkg dir [<path>]      show/set where recipe-less packages install
+                             (default SYS:Programs)
+
+Commands are case-sensitive (install, not Install). Installs check free disk
+space first and refuse cleanly when the volume is too full.
+
+
+Using it - GUI
+--------------
+TWO GUIs are installed - pick your flavour:
+
+  amipkg-mui   The polished MUI front-end (needs MUI 3.8+ -
+               `amipkg install mui38` bootstraps it): resizable
+               window, real list columns, description pane.
+  amipkg-gui   The GadTools fallback - runs on ANY stock 3.x
+               system with zero dependencies.
+
+Both offer the same features. GadTools GUI: toggle Installed / Available (top right),
+narrow the list with the Find box, the CATEGORY filter, and the By Name /
+Newest sort. Buttons: Update Catalog / Check Updates / Update All / Info /
+Install / Run (launch an installed program) / Remove / Refresh. Installs run
+in the background - watch the progress line at the bottom; the window stays
+usable. Set the install drawer from the Package menu.
+
+
+How trust works
+---------------
+The catalog (packages.json) is signed with an offline Ed25519 key; amipkg
+verifies that signature on-device before trusting it, so the download host is
+untrusted. Every package archive is then verified against the SHA-256 pinned in
+the signed catalog. A tampered catalog or archive is refused.
+
+
+Uninstall amipkg
+----------------
+    Delete the drawer you unpacked amipkg into. That is ALL - amipkg
+    never touches any system file.
+
+
+Repository / feedback
+---------------------
+Catalog + submissions: https://github.com/thomas-luebker/amiga-pkg
+Signed index served at: https://thomas-luebker.github.io/amiga-pkg/

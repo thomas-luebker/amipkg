@@ -1,0 +1,6 @@
+amipkg — a package manager for AmigaOS 3.x
+Copyright 2026 Thomas Luebker <thomas@amiga-imager.com>
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+Vendored components keep their own licenses: see vendor/*/README
+and src/core/tweetnacl.* (public domain).

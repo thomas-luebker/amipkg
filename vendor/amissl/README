@@ -1,0 +1,15 @@
+Vendored AmiSSL SDK header subset (v5.27)
+=========================================
+
+Source: https://github.com/jens-maus/amissl (AmiSSL-5.27-SDK.lha,
+Developer/include/), Apache License 2.0 — see the LICENSE notice in each
+header. Only the m68k-GCC-relevant subset is vendored (amissl/, openssl/,
+proto/, clib/, inline/, libraries/); the OS4/MorphOS/SAS-C dirs are omitted.
+
+Used at COMPILE TIME only (68k inline calls through the library bases) so
+src/amiga/http.c can speak https when the user has AmiSSL installed. No AmiSSL
+code is linked into or distributed with amipkg — the libraries are opened at
+runtime, and remain fully optional (plain-HTTP works without them).
+
+To upgrade: extract the new SDK's Developer/include/ over this directory
+(keeping only the subdirs above) and rebuild.

@@ -1,0 +1,52 @@
+#!/bin/sh
+# make-bundle.sh — assemble the standalone amipkg.lha for external testers.
+#
+# Bundles the freshly-built 68k binaries + the current signed AmigaPKG catalog
+# + the Install script and ReadMe into a flat lh0 .lha that any AmigaOS can
+# extract with C:lha. The catalog is baked in so browsing works offline right
+# after install; `amipkg update` refreshes it online.
+#
+#   dist/make-bundle.sh [output.lha]
+#
+# Env overrides:
+#   AMIPKG_BIN    dir holding amipkg, amipkg-gui, amipkg-gui.info
+#                 (default: ~/Desktop/amipkg-68k — where the Makefile stages)
+#   AMIPKG_INDEX  dir holding packages.json + packages.json.sig
+#                 (default: ~/Development/amiga-pkg/docs — the signed repo index)
+set -eu
+HERE="$(cd "$(dirname "$0")" && pwd)"
+BIN="${AMIPKG_BIN:-$HOME/Desktop/amipkg-68k}"
+INDEX="${AMIPKG_INDEX:-$HOME/Development/amiga-pkg/docs}"
+OUT="${1:-$HOME/Desktop/amipkg.lha}"
+
+STAGE="$(mktemp -d)/AmiPKG"
+mkdir -p "$STAGE"
+cp "$BIN/amipkg" "$BIN/amipkg-gui" "$BIN/amipkg-gui.info" "$STAGE/"
+cp "$BIN/amipkg-mui" "$STAGE/amipkg-mui"
+cp "$BIN/amipkg-gui.info" "$STAGE/amipkg-mui.info"   # same parcel icon
+cp "$INDEX/packages.json" "$INDEX/packages.json.sig" "$STAGE/"
+cp "$HERE/Install" "$HERE/Install-System" "$HERE/ReadMe" "$HERE/amipkg.guide" "$STAGE/"
+
+# A double-clickable installer icon: WBPROJECT + DefaultTool IconX runs the
+# Install script (the extracted Install has no script-bit, so this + the
+# documented `Execute Install` are the two ways to run it).
+python3 "$HERE/mkprojicon.py" "$STAGE/amipkg-gui.info" "$STAGE/Install.info" IconX
+python3 "$HERE/mkprojicon.py" "$STAGE/amipkg-gui.info" "$STAGE/Install-System.info" IconX
+
+( cd "$STAGE" && python3 "$HERE/mklha.py" "$OUT" \
+    amipkg amipkg-gui amipkg-gui.info amipkg-mui amipkg-mui.info \
+    amipkg.guide packages.json packages.json.sig \
+    Install Install.info Install-System Install-System.info ReadMe )
+
+# The SELF-UPDATE / release asset: binaries only, NO catalog. (The catalog
+# carries this archive's sha256 — including the catalog would make the hash
+# self-referential. The amipkg package entry's placeFile recipe installs
+# these into the AMIPKG: home drawer.)
+CLIENT="$(dirname "$OUT")/amipkg-client.lha"
+( cd "$STAGE" && python3 "$HERE/mklha.py" "$CLIENT" \
+    amipkg amipkg-gui amipkg-gui.info amipkg-mui amipkg-mui.info amipkg.guide )
+rm -rf "$(dirname "$STAGE")"
+
+echo "wrote $OUT"
+echo "wrote $CLIENT (self-update / release asset)"
+command -v lha >/dev/null 2>&1 && lha l "$OUT" || true

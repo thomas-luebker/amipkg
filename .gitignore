@@ -1,0 +1,11 @@
+# Build artifacts (68k binaries + host test binaries)
+/amipkg
+/amipkg-gui
+/amipkg-mui
+/amipkg.020
+/amipkg-gui.020
+/amipkg-host
+*.o
+/build/
+/tests/mui-bisect/mui-t[0-9]
+/tests/mui-bisect/mui-no-*

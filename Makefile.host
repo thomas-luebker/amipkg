@@ -1,0 +1,48 @@
+# amipkg — host test build (clang/gcc on macOS/Linux)
+#
+#   make -f Makefile.host test   → compile + run the portable-core suite
+#   make -f Makefile.host cli    → host build of the CLI (logic testing only;
+#                                  networking stubbed, paths literal)
+
+CC      = clang
+CFLAGS  = -std=c99 -Wall -Wextra -Werror -O2
+
+CORE = src/core/sha256.c src/core/aver.c src/core/receipts.c \
+       src/core/ajson.c src/core/aindex.c src/core/resolve.c src/core/arecipe.c src/core/arun.c \
+       src/core/store.c
+
+# TweetNaCl (vendored) compiled with warnings off — terse crypto.
+build/tweetnacl.o: src/core/tweetnacl.c
+	@mkdir -p build
+	$(CC) -w -O2 -c $< -o $@
+
+test: build/test_core build/verify_core
+	./build/test_core
+	./build/verify_core
+
+build/test_core: tests/test_core.c $(CORE)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ tests/test_core.c $(CORE)
+
+# Ed25519 on-device verify, checked against the REAL signed index at build time
+# (env AMIGAPKG_INDEX / _SIG override the default local repo checkout paths).
+build/verify_core: tests/verify_core.c src/core/averify.c build/tweetnacl.o
+	@mkdir -p build
+	$(CC) $(CFLAGS) -I src/core -o $@ tests/verify_core.c src/core/averify.c build/tweetnacl.o
+
+cli: build/amipkg-host
+
+build/amipkg-host: src/amiga/main.c $(CORE) src/core/averify.c src/core/adfread.c build/tweetnacl.o
+	@mkdir -p build
+	$(CC) $(CFLAGS) -I src/core -o $@ src/amiga/main.c $(CORE) src/core/averify.c src/core/adfread.c build/tweetnacl.o
+
+# ADF reader harness: build/adf_extract <image.adf> <destdir>
+adf: build/adf_extract
+build/adf_extract: tests/adf_extract.c src/core/adfread.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ tests/adf_extract.c src/core/adfread.c
+
+clean:
+	rm -rf build
+
+.PHONY: test cli adf clean
