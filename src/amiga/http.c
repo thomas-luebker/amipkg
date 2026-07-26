@@ -82,8 +82,13 @@ static int amissl_available(void)
         printf("Install AmiSSL 5.x (Aminet util/libs/amissl) to enable https downloads.\n");
         return 0;
     }
-    if (!InitAmiSSLMaster(AMISSL_CURRENT_VERSION, TRUE)) {
-        printf("amipkg: installed AmiSSL is too old (need 5.x) - https unavailable.\n");
+    /* Request the OLDEST API level we actually use (OpenSSL 1.1 line:
+     * TLS_client_method + SNI) - AMISSL_CURRENT_VERSION would demand the
+     * very newest installed AmiSSL and rejected perfectly good 5.x
+     * installs (tester report: "installed amissl is too old"). */
+    if (!InitAmiSSLMaster(AMISSL_V11x, TRUE)) {
+        printf("amipkg: installed AmiSSL is too old - https unavailable.\n");
+        printf("Update it right from here:  amipkg install amissl\n");
         return 0;
     }
     AmiSSLBase = OpenAmiSSL();
