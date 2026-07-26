@@ -1,4 +1,4 @@
-# amipkg 0.4.5 — release notes
+# amipkg 0.4.6 — release notes
 
 The "it's a real project now" release: amipkg has its own home — on your
 Amiga *and* on GitHub.

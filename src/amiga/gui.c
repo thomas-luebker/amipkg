@@ -49,12 +49,12 @@
 #include "../core/aindex.h"
 #include "../core/aver.h"
 
-#define AMIPKG_GUI_VERSION "amipkg-gui 0.4.5"
+#define AMIPKG_GUI_VERSION "amipkg-gui 0.4.6"
 
 /* AmigaOS Version-command tag: `Version SYS:Tools/amipkg-gui` reports the
  * exact build - essential for tester feedback. `used` keeps -Os from
  * discarding the unreferenced constant. */
-static const char verstag[] __attribute__((used)) = "$VER: amipkg-gui 0.4.5 (26.7.2026)";
+static const char verstag[] __attribute__((used)) = "$VER: amipkg-gui 0.4.6 (26.7.2026)";
 
 struct IntuitionBase *IntuitionBase = NULL;
 struct Library       *GadToolsBase  = NULL;
@@ -199,14 +199,25 @@ static void open_docs(void)
 }
 static const char *cli_path(void)
 {
-    static char path[20] = "";
+    static char path[300] = "";
     if (!path[0]) {
         /* OWN DRAWER FIRST: the CLI next to this GUI is by definition the
-         * matching version (a stale AMIPKG: assign can point at an old
-         * drawer - tester report: empty output + rc 10 because the shelled
-         * command did not exist). Then the assign, then the image path. */
+         * matching version. CRITICAL: as an ABSOLUTE path, quoted - the
+         * async ops run the command through an Execute'd shell, and that
+         * shell process has NO PROGDIR: of its own ("please insert volume
+         * PROGDIR:" requester, tester report 0.4.6). */
         BPTR l = Lock((STRPTR)"PROGDIR:amipkg", ACCESS_READ);
-        if (l) { UnLock(l); strcpy(path, "PROGDIR:amipkg"); return path; }
+        if (l) {
+            char dir[256];
+            BPTR pd = GetProgramDir();
+            UnLock(l);
+            dir[0] = 0;
+            if (pd && NameFromLock(pd, (STRPTR)dir, sizeof dir) && dir[0]) {
+                snprintf(path, sizeof path, "\"%s%samipkg\"",
+                         dir, dir[strlen(dir) - 1] == ':' ? "" : "/");
+                return path;
+            }
+        }
         l = Lock((STRPTR)"AMIPKG:amipkg", ACCESS_READ);
         if (l) { UnLock(l); strcpy(path, "AMIPKG:amipkg"); }
         else strcpy(path, "C:amipkg");
