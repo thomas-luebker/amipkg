@@ -1,8 +1,8 @@
 /*
- * arun.h — amipkg portable core
+ * arun.h - amipkg portable core
  *
  * The recipe EXECUTION PLAN: given a recipe and a listing of an extracted
- * archive tree, compute the concrete file operations to perform — which
+ * archive tree, compute the concrete file operations to perform - which
  * source file goes to which destination, with which protection, plus the
  * strip/exec/script-inject actions. This is the portable, host-tested half
  * of on-Amiga install (mirror of RecipeRunner's decisions); the AmigaOS
@@ -21,7 +21,7 @@
 #define ARUN_MAX_OPS   512
 
 typedef enum {
-    ARUN_COPY,        /* copy src → dest (a file) */
+    ARUN_COPY,        /* copy src -> dest (a file) */
     ARUN_SET_EXEC,    /* set the script/exec protection bit on dest */
     ARUN_STRIP,       /* delete dest (junk / bundled Installer) */
     ARUN_SCRIPT       /* inject overlay into a boot script */

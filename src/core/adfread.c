@@ -1,5 +1,5 @@
 /*
- * adfread.c — minimal read-only OFS/FFS ADF extractor. See adfread.h.
+ * adfread.c - minimal read-only OFS/FFS ADF extractor. See adfread.h.
  *
  * Block layout (big-endian longs, BSIZE=512), per the Amiga FFS/OFS format:
  *   header/dir/root block:

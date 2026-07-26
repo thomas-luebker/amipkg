@@ -1,16 +1,16 @@
 /*
- * http.c — amipkg Amiga platform layer
+ * http.c - amipkg Amiga platform layer
  *
  * HTTP/1.1 GET over bsdsocket.library (Roadshow, or UAE's host emulation),
  * plus HTTPS via AmiSSL WHEN IT IS INSTALLED (amisslmaster.library v5+,
  * opened lazily on the first https:// URL; without it, https is refused with
- * a clear hint). TLS is used for TRANSPORT COMPATIBILITY only — hosts like
- * GitHub are https-only — not for trust: the signed index pins each
+ * a clear hint). TLS is used for TRANSPORT COMPATIBILITY only - hosts like
+ * GitHub are https-only - not for trust: the signed index pins each
  * archive's SHA-256, so certificate verification is deliberately off (no
  * cert store is guaranteed on a classic Amiga, and integrity is already
  * end-to-end via the Ed25519-signed catalog).
  *
- * Redirects (301/302/303/307/308) are followed up to 3 hops — GitHub
+ * Redirects (301/302/303/307/308) are followed up to 3 hops - GitHub
  * release downloads always bounce to a CDN host. The SHA-256 pin makes
  * redirect-following safe: wherever the bytes come from, they must hash to
  * the pinned digest or the download is refused.
@@ -20,7 +20,7 @@
 
 /* The NDK sys/socket.h uses ssize_t, but newlib gates its typedef behind a
  * feature macro that isn't active here. Define it (with newlib's own guard, so
- * this is conflict-free) BEFORE proto/bsdsocket.h — which pulls in socket.h.
+ * this is conflict-free) BEFORE proto/bsdsocket.h - which pulls in socket.h.
  * (32-bit on m68k.) */
 #include <sys/types.h>
 #ifndef _SSIZE_T_DECLARED
@@ -71,7 +71,7 @@ int http_available(void)
 static int amissl_available(void)
 {
     if (g_ssl_ctx) return 1;
-    if (g_amissl_tried) return 0;   /* failed before — don't spam retries */
+    if (g_amissl_tried) return 0;   /* failed before - don't spam retries */
     g_amissl_tried = 1;
 
     if (!http_available()) return 0;
@@ -83,18 +83,18 @@ static int amissl_available(void)
         return 0;
     }
     if (!InitAmiSSLMaster(AMISSL_CURRENT_VERSION, TRUE)) {
-        printf("amipkg: installed AmiSSL is too old (need 5.x) — https unavailable.\n");
+        printf("amipkg: installed AmiSSL is too old (need 5.x) - https unavailable.\n");
         return 0;
     }
     AmiSSLBase = OpenAmiSSL();
     if (!AmiSSLBase) {
-        printf("amipkg: couldn't open AmiSSL — https unavailable.\n");
+        printf("amipkg: couldn't open AmiSSL - https unavailable.\n");
         return 0;
     }
     if (InitAmiSSL(AmiSSL_ErrNoPtr, (ULONG)&errno,
                    AmiSSL_SocketBase, (ULONG)SocketBase,
                    TAG_DONE) != 0) {
-        printf("amipkg: couldn't initialize AmiSSL — https unavailable.\n");
+        printf("amipkg: couldn't initialize AmiSSL - https unavailable.\n");
         return 0;
     }
     OPENSSL_init_ssl(OPENSSL_INIT_SSL_DEFAULT
@@ -111,7 +111,7 @@ static int amissl_available(void)
     }
     g_ssl_ctx = SSL_CTX_new(TLS_client_method());
     if (!g_ssl_ctx) {
-        printf("amipkg: SSL_CTX_new failed — https unavailable.\n");
+        printf("amipkg: SSL_CTX_new failed - https unavailable.\n");
         return 0;
     }
     /* Integrity comes from the signed index's SHA-256 pin, not the cert chain
@@ -190,7 +190,7 @@ static int header_location(const char *header, char *out, size_t outsize)
 }
 
 /* One GET; on a 3xx fills `redirect` and returns 2. 0 = 200/206 body written,
- * 1 = hard failure, 3 = server ignored our Range (sent 200) — caller must
+ * 1 = hard failure, 3 = server ignored our Range (sent 200) - caller must
  * restart the file from zero. `resume_from` > 0 adds a Range header. */
 static int do_get(const char *url, FILE *out, long *bytes_out,
                   char *redirect, size_t redirsize, long resume_from)
@@ -282,7 +282,7 @@ static int do_get(const char *url, FILE *out, long *bytes_out,
                 }
             }
             if (resume_from > 0 && status == 200) {
-                /* Server ignored the Range: the body is the FULL file — the
+                /* Server ignored the Range: the body is the FULL file - the
                  * caller must truncate + restart, not append. */
                 if (ssl) { SSL_shutdown(ssl); SSL_free(ssl); }
                 CloseSocket(sock);
@@ -346,7 +346,7 @@ int http_get(const char *url, FILE *out, long *bytes_out)
     for (hops = 0; hops < 4; hops++) {
         rc = do_get(current, out, bytes_out, redirect, sizeof redirect, 0);
         if (rc != 2) return rc;
-        /* Restart the body for the new location (out may have header spill —
+        /* Restart the body for the new location (out may have header spill -
          * it can't: body only written on 200; just rewind for cleanliness). */
         fseek(out, 0, SEEK_SET);
         printf("amipkg: following redirect -> %s\n", redirect);
@@ -371,7 +371,7 @@ int http_get_file(const char *url, const char *path, long *bytes_out)
 
     out = fopen(path, "rb");
     if (out) { fseek(out, 0, SEEK_END); have = ftell(out); fclose(out); }
-    if (have > 0) printf("amipkg: resuming at %ld bytes…\n", have);
+    if (have > 0) printf("amipkg: resuming at %ld bytes...\n", have);
     out = fopen(path, have > 0 ? "ab" : "wb");
     if (!out) { printf("amipkg: cannot write %s\n", path); return 10; }
 
@@ -383,7 +383,7 @@ int http_get_file(const char *url, const char *path, long *bytes_out)
             current[sizeof current - 1] = '\0';
             continue;
         }
-        if (rc == 3) {   /* Range ignored — restart the file from zero */
+        if (rc == 3) {   /* Range ignored - restart the file from zero */
             fclose(out);
             out = fopen(path, "wb");
             if (!out) { printf("amipkg: cannot rewrite %s\n", path); return 10; }

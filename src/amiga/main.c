@@ -1,5 +1,5 @@
 /*
- * main.c — amipkg, the package-manager CLI for AmigaOS 3.x.
+ * main.c - amipkg, the package-manager CLI for AmigaOS 3.x.
  *
  * Runs on ANY 3.x system (the standalone dist/ bundle installs it) and on
  * every Amiga-Imager-built image. Full docs: dist/ReadMe; roadmap:
@@ -17,7 +17,7 @@
  * signed catalog. The transport (plain HTTP, or https via optional AmiSSL)
  * is untrusted by design.
  *
- * A 128 KB stack is guaranteed by StackSwap in main() — the launching
+ * A 128 KB stack is guaranteed by StackSwap in main() - the launching
  * Shell's stack setting cannot matter.
  */
 
@@ -38,7 +38,7 @@
 #include <string.h>
 
 #ifdef __amigaos__
-/* (Stack is guaranteed by a StackSwap in main() — the newlib crt0 ignores the
+/* (Stack is guaranteed by a StackSwap in main() - the newlib crt0 ignores the
  * libnix-style `__stack` global, so we do it ourselves. See main().) */
 
 /* AmigaOS Version-command tag: `Version C:amipkg` reports the exact build. */
@@ -69,7 +69,7 @@ int amipkg_ks_version(void);                      /* exec lib_Version (39 = KS 3
  * declares `extern char **__argv` and does `__argv = calloc(...)`, which
  * writes the fresh array's pointer INTO __argv[0] instead of repointing argv.
  * Net result on the Amiga: argc is correct, argv[0] is garbage and argv[1] is
- * always NULL — every subcommand reads as `(null)`. (libnix's crt0 declares
+ * always NULL - every subcommand reads as `(null)`. (libnix's crt0 declares
  * ___argv as a 4-byte pointer, so the same parser is correct there; the newlib
  * port regressed the type.) We sidestep it entirely by rebuilding argv from
  * the raw DOS argument string, which crt0 does capture correctly. */
@@ -146,7 +146,7 @@ static const aj_node *find_entry_obj_by_id(const aj_node *root, const char *id)
     return 0;
 }
 
-/* "DH0:Programs/Foo" → a path fopen can use. On AmigaOS the receipt's
+/* "DH0:Programs/Foo" -> a path fopen can use. On AmigaOS the receipt's
  * absolute path IS a valid DOS path already; on the host build we leave it
  * unchanged too (host build is for logic testing only). */
 #define receipt_path(p) (p)
@@ -210,7 +210,7 @@ static int cmd_info(const char *id)
     if (load_index(&idx) != 0) return 10;
     e = aidx_find(&idx, id);
     if (!e) { printf("amipkg: '%s' is not in the index.\n", id); aidx_free(&idx); return 5; }
-    printf("%s — %s (%s)\n", e->id, e->name, e->category);
+    printf("%s - %s (%s)\n", e->id, e->name, e->category);
     if (e->description[0]) printf("  %s\n", e->description);
     printf("  version: %s\n", e->version);
     if (e->added[0]) printf("  added: %s\n", e->added);
@@ -220,7 +220,7 @@ static int cmd_info(const char *id)
         printf("\n");
     }
     if (e->archive_url[0]) printf("  archive: %s\n", e->archive_url);
-    if (e->archive_sha256[0]) printf("  sha256: %.16s…\n", e->archive_sha256);
+    if (e->archive_sha256[0]) printf("  sha256: %.16s...\n", e->archive_sha256);
     printf("  install: %s\n", e->has_recipe ? "portable recipe" : "build-time only");
     aidx_free(&idx);
     return 0;
@@ -278,12 +278,12 @@ static int cmd_avail(const char *filter)
 }
 
 /* The plain-HTTP mirror of the signed index (amipkg has no TLS; the host is
- * UNTRUSTED — the Ed25519 signature is verified on-device below, so a plain-HTTP
+ * UNTRUSTED - the Ed25519 signature is verified on-device below, so a plain-HTTP
  * mirror is safe). amiga-imager.org is served over plain HTTP for exactly this
  * (.com/.de force HTTPS). Override with the AMIPKG_REPO_URL env var. */
 #define AMIPKG_UPDATE_BASE "http://amiga-imager.org/packages"
 
-/* `amipkg update` — fetch a fresh packages.json + .sig from the repo mirror,
+/* `amipkg update` - fetch a fresh packages.json + .sig from the repo mirror,
  * verify the Ed25519 signature against the baked public key ON-DEVICE, and only
  * then replace the seeded AMIPKG:packages.json. This is what lets an online
  * Amiga pick up newly-published packages without a rebuild. */
@@ -312,13 +312,13 @@ static int cmd_update(void)
     json = read_file(jnew);
     sig  = read_file(snew);
     if (!json || !sig) { printf("amipkg: could not read the download.\n"); goto fail; }
-    jl = strlen(json);                       /* JSON is text (no NUL) → exact byte length */
+    jl = strlen(json);                       /* JSON is text (no NUL) -> exact byte length */
     sl = strlen(sig);
     while (sl && (sig[sl-1] == '\n' || sig[sl-1] == '\r' || sig[sl-1] == ' ' || sig[sl-1] == '\t'))
         sig[--sl] = '\0';
 
     if (!amipkg_verify_index((const unsigned char *)json, jl, sig)) {
-        printf("amipkg: SIGNATURE DID NOT VERIFY — keeping the current catalog.\n");
+        printf("amipkg: SIGNATURE DID NOT VERIFY - keeping the current catalog.\n");
         goto fail;
     }
     /* Verified: install it as the new seeded index (+ keep the .sig alongside). */
@@ -364,7 +364,7 @@ static int fetch_verified(const aidx_entry *e, char *dest_out, size_t dest_sz)
     size_t m;
     if (!e->archive_url[0]) { printf("amipkg: '%s' has no archive.\n", e->id); return 5; }
     if (!e->archive_sha256[0]) {
-        printf("amipkg: '%s' has no pinned sha256 — refusing (trust contract).\n", e->id);
+        printf("amipkg: '%s' has no pinned sha256 - refusing (trust contract).\n", e->id);
         return 5;
     }
     snprintf(dest_out, dest_sz, AMIPKG_CACHE_DIR "%s", basename_of(e->archive_url));
@@ -373,19 +373,19 @@ static int fetch_verified(const aidx_entry *e, char *dest_out, size_t dest_sz)
         printf("Cached %s (sha256 verified).\n", e->id);
         return 0;
     }
-    /* Download to <name>.part with resume (Range) — an interrupted transfer
+    /* Download to <name>.part with resume (Range) - an interrupted transfer
      * continues where it stopped, incl. across mirrors (identical bytes by
      * contract; the SHA-256 check below catches any divergence). */
     snprintf(part, sizeof part, "%s.part", dest_out);
-    printf("Fetching %s…\n", e->archive_url);
+    printf("Fetching %s...\n", e->archive_url);
     rc = http_get_file(e->archive_url, part, &bytes);
     for (m = 0; rc != 0 && m < e->mirror_count; m++) {
-        printf("Trying mirror %s…\n", e->mirrors[m]);
+        printf("Trying mirror %s...\n", e->mirrors[m]);
         rc = http_get_file(e->mirrors[m], part, &bytes);
     }
-    if (rc != 0) return 10;   /* .part stays — the next attempt resumes it */
+    if (rc != 0) return 10;   /* .part stays - the next attempt resumes it */
     if (sha256_of_file(part, hex) != 0 || strcmp(hex, e->archive_sha256) != 0) {
-        printf("amipkg: SHA-256 MISMATCH for %s — deleting download.\n", part);
+        printf("amipkg: SHA-256 MISMATCH for %s - deleting download.\n", part);
         printf("  expected %s\n  got      %s\n", e->archive_sha256, hex);
         remove(part);
         return 10;
@@ -492,7 +492,7 @@ static int floors_ok(const aidx_entry *e)
 /* Disk-space preflight: refuse an install that would obviously fill the
  * volume. Extracted trees run ~2-3x the LHA size, so require 3x on the
  * destination (plus the archive itself in the cache when not yet cached).
- * amipkg_volume_free returns -1 when unknown — then we don't block. */
+ * amipkg_volume_free returns -1 when unknown - then we don't block. */
 static int space_ok(const aidx_entry *e, const char *archive_path, const char *dest_volume)
 {
     long long need, freeb;
@@ -519,14 +519,14 @@ static int space_ok(const aidx_entry *e, const char *archive_path, const char *d
     return 1;
 }
 
-/* Install ONE resolved entry (no dependency handling here — cmd_install
+/* Install ONE resolved entry (no dependency handling here - cmd_install
  * resolves and orders; this does the fetch/verify/extract/copy/receipt). */
 static int install_entry(const aidx_index *idx, const aidx_entry *e)
 {
     const char *root;
     aj_node *tree;
     const aj_node *entry_obj;
-    static arecipe recipe;   /* ~32 KB — keep off the Shell stack; install_entry
+    static arecipe recipe;   /* ~32 KB - keep off the Shell stack; install_entry
                                 runs sequentially, never nested */
     char archive[256];
     static char paths[256][256];
@@ -535,7 +535,7 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
 
     tree = NULL;
     if (!e->archive_url[0]) {
-        printf("amipkg: '%s' has no downloadable archive — install it at build time / via the Mac app.\n", e->id);
+        printf("amipkg: '%s' has no downloadable archive - install it at build time / via the Mac app.\n", e->id);
         return 5;
     }
 
@@ -572,7 +572,7 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
     rc = fetch_verified(e, archive, sizeof archive);
     if (rc != 0) { if (tree) ajson_free(tree); return rc; }
 
-    printf("Unpacking + installing %s…\n", e->id);
+    printf("Unpacking + installing %s...\n", e->id);
     if (archive_is_adf(archive)) {
         /* Package shipped as a raw Amiga floppy image: read its OFS/FFS tree. */
         if (adf_extract(archive, AMIPKG_CACHE_DIR "extract") < 0) {
@@ -587,7 +587,7 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
      * to remove the previously-installed version (files + receipt) first. Doing
      * it AFTER extraction means a failed download never destroys the install. */
     if (pkg_installed(e->id)) {
-        printf("Upgrading %s — removing the previous version…\n", e->id);
+        printf("Upgrading %s - removing the previous version...\n", e->id);
         cmd_remove(e->id, 1 /*force: an upgrade replaces its own files*/);
     }
     if (e->has_recipe) {
@@ -602,7 +602,7 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
         amipkg_get_pkgdir(e->id, dir, sizeof dir);   /* adopt override, else global */
         if (archive_is_adf(archive)) snprintf(dest, sizeof dest, "%s/%s", dir, e->id);
         else                         snprintf(dest, sizeof dest, "%s", dir);
-        printf("(no recipe — installing into %s)\n", dest);
+        printf("(no recipe - installing into %s)\n", dest);
         n = amipkg_install_generic(AMIPKG_CACHE_DIR "extract", dest, paths, 256);
     }
     if (n == 0) {
@@ -613,7 +613,7 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
     if (e->has_recipe) {
         /* Record boot-script edits (scripts/<id>.edits, target|marker|version)
          * so `remove` can strip the overlay blocks, and save any removeScript
-         * lines (scripts/<id>.remove) to run at uninstall — the receipt owns
+         * lines (scripts/<id>.remove) to run at uninstall - the receipt owns
          * them so removal works even after the catalog moves on. */
         char rp[192];
         FILE *f;
@@ -653,7 +653,7 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
     return 0;
 }
 
-/* `amipkg install <id> [DRYRUN]` — resolve dependencies (topological,
+/* `amipkg install <id> [DRYRUN]` - resolve dependencies (topological,
  * CPU-variant aware) and install everything that's missing, dependencies
  * first. DRYRUN prints the plan + download sizes and changes nothing. */
 static int cmd_install2(const char *id, int dry)
@@ -669,28 +669,28 @@ static int cmd_install2(const char *id, int dry)
     e = aidx_find(&idx, id);
     if (!e) { printf("amipkg: '%s' not in the index.\n", id); aidx_free(&idx); return 5; }
     if (entry_build_only(e)) {
-        printf("amipkg: '%s' is installed at build time only (Amiga Imager) — not installable here.\n", id);
+        printf("amipkg: '%s' is installed at build time only (Amiga Imager) - not installable here.\n", id);
         aidx_free(&idx); return 5;
     }
     if (!floors_ok(e)) { aidx_free(&idx); return 5; }
 
     ares_resolve(&idx, id, amipkg_cpu(), &res);
     for (i = 0; i < res.missing_count; i++)
-        printf("amipkg: WARNING — dependency '%s' is not in the index; continuing without it.\n",
+        printf("amipkg: WARNING - dependency '%s' is not in the index; continuing without it.\n",
                res.missing[i]);
 
-    if (dry) printf("DRY RUN — nothing will be installed.\n");
+    if (dry) printf("DRY RUN - nothing will be installed.\n");
     for (i = 0; i < res.count && rc == 0; i++) {
         const aidx_entry *pe = res.ordered[i];
         int is_target = strcmp(pe->id, e->id) == 0;
         /* Dependencies already present are satisfied; the TARGET always
-         * (re)installs — that's the upgrade path. */
+         * (re)installs - that's the upgrade path. */
         if (!is_target && pkg_installed(pe->id)) {
             if (dry) printf("  %-24s (already installed)\n", pe->id);
             continue;
         }
         if (!is_target && entry_build_only(pe)) {
-            printf("amipkg: WARNING — dependency '%s' is build-time only and not installed;\n"
+            printf("amipkg: WARNING - dependency '%s' is build-time only and not installed;\n"
                    "        '%s' may not work until an Amiga Imager build provides it.\n",
                    pe->id, id);
             continue;
@@ -704,7 +704,7 @@ static int cmd_install2(const char *id, int dry)
             installed_count++;
             continue;
         }
-        if (!is_target) printf("Installing dependency %s…\n", pe->id);
+        if (!is_target) printf("Installing dependency %s...\n", pe->id);
         rc = install_entry(&idx, pe);
         if (rc == 0) installed_count++;
     }
@@ -719,7 +719,7 @@ static int cmd_install2(const char *id, int dry)
 
 static int cmd_install(const char *id) { return cmd_install2(id, 0); }
 
-/* `amipkg doctor` — verify every receipt against the disk: missing files,
+/* `amipkg doctor` - verify every receipt against the disk: missing files,
  * digest mismatches (user-modified or corrupt). Advises reinstalls. */
 static int cmd_doctor(void)
 {
@@ -754,7 +754,7 @@ static int cmd_doctor(void)
     return 5;
 }
 
-/* `amipkg upgrade [<id>]` — reinstall every installed package whose index
+/* `amipkg upgrade [<id>]` - reinstall every installed package whose index
  * version is newer (or just <id>). Each install is upgrade-aware (removes the
  * old version first). With no argument it upgrades everything out of date. */
 static int cmd_upgrade(const char *only_id)
@@ -766,7 +766,7 @@ static int cmd_upgrade(const char *only_id)
     int rc = 0;
     if (load_index(&idx) != 0) return 10;
     ninst = load_installed(inst, MAX_PKGS);
-    /* Snapshot the ids to upgrade FIRST — installing rewrites installed.txt. */
+    /* Snapshot the ids to upgrade FIRST - installing rewrites installed.txt. */
     for (i = 0; i < ninst; i++) {
         const aidx_entry *e;
         if (only_id && strcmp(inst[i].id, only_id) != 0) continue;
@@ -817,7 +817,7 @@ static int cmd_remove(const char *id, int force)
 
     nfiles = load_files_for(id, files, MAX_FILES);
     if (nfiles == 0)
-        printf("amipkg: no file inventory for '%s' — only the DB entry will be removed.\n", id);
+        printf("amipkg: no file inventory for '%s' - only the DB entry will be removed.\n", id);
 
     /* First pass: classify. Shared = the path appears in another package's
      * inventory (case-insensitive compare via strcasecmp fallback loop). */
@@ -868,7 +868,7 @@ static int cmd_remove(const char *id, int force)
         snprintf(rp, sizeof rp, AMIPKG_DB_PREFIX "scripts/%s.remove", id);
         sc = read_file(rp);
         if (sc) {
-            printf("Running %s's uninstall script…\n", id);
+            printf("Running %s's uninstall script...\n", id);
             if (amipkg_run_inline_script(sc, "uninstall") >= 10)
                 printf("amipkg: WARNING - the uninstall script failed; continuing.\n");
             free(sc);
@@ -924,10 +924,26 @@ static int cmd_remove(const char *id, int force)
     return 0;
 }
 
-/* `amipkg adopt <id> <drawer> [<version>]` — take over managing an app the
+/* `amipkg adopt <id> <drawer> [<version>]` - take over managing an app the
  * user ALREADY has, wherever it lives: inventory the drawer into the receipt
  * DB (digests included, so remove/doctor work) and remember its PARENT as the
  * package's install dir so upgrades land in place. */
+/* Drop one id's line from installed.txt (receipt only - files untouched). */
+static void receipt_remove_installed(const char *id)
+{
+    static rcpt_installed inst[MAX_PKGS];
+    size_t ninst = load_installed(inst, MAX_PKGS), i;
+    FILE *f = fopen(AMIPKG_DB_PREFIX "installed.txt", "wb");
+    char line[192];
+    if (!f) return;
+    for (i = 0; i < ninst; i++) {
+        if (strcmp(inst[i].id, id) == 0) continue;
+        rcpt_format_installed_line(&inst[i], line, sizeof line);
+        fprintf(f, "%s\n", line);
+    }
+    fclose(f);
+}
+
 static int cmd_adopt(const char *id, const char *drawer, const char *version)
 {
     aidx_index idx;
@@ -936,13 +952,19 @@ static int cmd_adopt(const char *id, const char *drawer, const char *version)
     char parent[256];
 
     if (pkg_installed(id)) {
-        printf("amipkg: '%s' is already installed/adopted — remove it first.\n", id);
-        return 5;
+        /* Re-adopt (tester request: a mistaken adopt must be correctable
+         * without deleting anything): drop the old RECEIPT - files on disk
+         * are untouched - and inventory the new drawer. */
+        char rp[192];
+        printf("amipkg: '%s' is already recorded - re-adopting (old receipt replaced, no files touched).\n", id);
+        receipt_remove_installed(id);
+        snprintf(rp, sizeof rp, AMIPKG_DB_PREFIX "files/%s.files", id);
+        remove(rp);
     }
     if (load_index(&idx) != 0) return 10;
     e = aidx_find(&idx, id);
     if (!e) {
-        printf("amipkg: '%s' is not in the catalog — adoption links an app to its\n"
+        printf("amipkg: '%s' is not in the catalog - adoption links an app to its\n"
                "catalog entry for updates. Check the id with: amipkg avail <term>\n", id);
         aidx_free(&idx);
         return 5;
@@ -951,7 +973,7 @@ static int cmd_adopt(const char *id, const char *drawer, const char *version)
     files = amipkg_adopt_inventory(id, drawer);
     if (files < 0) { printf("amipkg: cannot read %s\n", drawer); aidx_free(&idx); return 10; }
     if (files == 0) {
-        printf("amipkg: %s contains no files — nothing to adopt.\n", drawer);
+        printf("amipkg: %s contains no files - nothing to adopt.\n", drawer);
         aidx_free(&idx);
         return 5;
     }
@@ -982,7 +1004,7 @@ static int cmd_adopt(const char *id, const char *drawer, const char *version)
     printf("Adopted %s: %ld file(s) at %s\n", id, files, drawer);
     printf("Version recorded: %s%s\n",
            version && version[0] ? version : "unknown",
-           version && version[0] ? "" : " — `amipkg check` will offer a reinstall");
+           version && version[0] ? "" : " - `amipkg check` will offer a reinstall");
     printf("Future upgrades install into: %s\n", parent);
     aidx_free(&idx);
     return 0;
@@ -996,7 +1018,7 @@ static int usage_needs(const char *cmd, const char *args)
     return 5;
 }
 
-/* `amipkg dir [<path>]` — show or set where recipe-less packages install to.
+/* `amipkg dir [<path>]` - show or set where recipe-less packages install to.
  * With no argument, prints the current destination; with a path, persists it
  * (a lone "-" reverts to the default). */
 static int cmd_dir(const char *path)
@@ -1021,7 +1043,7 @@ static int dispatch(int argc, char **argv)
 {
     int rc = 5;
     if (argc < 2) {
-        printf("amipkg 0.4 — AmigaImager package manager\n");
+        printf("amipkg 0.4 - AmigaImager package manager\n");
         printf("usage: amipkg update | list | avail [term] | check | doctor | info <id> | fetch <id> | install <id> [DRYRUN] | adopt <id> <drawer> [<ver>] | upgrade [<id>] | dir [<path>] | verify <file> <sha256> | remove <id> [FORCE]\n");
         return 5;
     }
@@ -1055,12 +1077,12 @@ static int dispatch(int argc, char **argv)
 
 #ifdef __amigaos__
 /* The launching Shell gives us its stack (default 4 KB), which the install path
- * (recursive walk_tree + JSON parse + a few KB of locals) can overflow → a
- * corrupted return address → "illegal instruction" (Guru 8000_0004) on real
+ * (recursive walk_tree + JSON parse + a few KB of locals) can overflow -> a
+ * corrupted return address -> "illegal instruction" (Guru 8000_0004) on real
  * hardware. bebbo's newlib crt0 does NOT honour the `__stack` global (that's a
  * libnix feature), so we guarantee a big stack ourselves: allocate 128 KB and
  * StackSwap onto it before doing any work. Globals (not stack locals) carry
- * argc/argv/rc across the swap — after StackSwap the SP-relative locals of this
+ * argc/argv/rc across the swap - after StackSwap the SP-relative locals of this
  * frame are invalid under -fomit-frame-pointer, so we must not touch them. */
 #include <exec/tasks.h>
 #include <proto/exec.h>

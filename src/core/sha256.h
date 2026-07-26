@@ -1,7 +1,7 @@
 /*
- * sha256.h — amipkg portable core
+ * sha256.h - amipkg portable core
  *
- * Minimal SHA-256 (FIPS 180-4). Portable C99, no dependencies — runs on
+ * Minimal SHA-256 (FIPS 180-4). Portable C99, no dependencies - runs on
  * 68000 up (no alignment tricks, no 64-bit requirements beyond a length
  * counter kept as two 32-bit words). This is the integrity primitive the
  * Phase-3 trust model needs on-Amiga: archives are verified against the

@@ -1,5 +1,5 @@
 /*
- * aver.h — amipkg portable core
+ * aver.h - amipkg portable core
  *
  * Version ordering: the C mirror of AmigaPackageKit's PackageVersionOrder.
  * The two implementations MUST agree (shared contract, shared test vectors):

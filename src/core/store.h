@@ -1,12 +1,12 @@
 /*
- * store.h — amipkg on-image data access (receipt DB + seeded index paths).
+ * store.h - amipkg on-image data access (receipt DB + seeded index paths).
  *
  * The small I/O + parse helpers shared by BOTH front-ends: the CLI (main.c)
  * and the GadTools GUI (gui.c). Keeping them here means the two front-ends
  * read the receipt DB and index through ONE implementation and cannot drift.
  *
  * Portable C (fopen/fread); on the host build the AMIPKG: paths simply
- * don't resolve, which is fine — the host build is for logic testing.
+ * don't resolve, which is fine - the host build is for logic testing.
  */
 #ifndef AMIPKG_STORE_H
 #define AMIPKG_STORE_H
@@ -14,12 +14,12 @@
 #include <stddef.h>
 #include "receipts.h"
 
-/* The ONE data assign: AMIPKG: — it points at amipkg's HOME, the drawer
+/* The ONE data assign: AMIPKG: - it points at amipkg's HOME, the drawer
  * where amipkg was unpacked or copied (like MUI:). Binaries, catalog, cache
  * and receipt DB live together in that drawer. amipkg_bridge_assigns()
- * creates it on EVERY run (PROGDIR:-based — nothing is written to any
+ * creates it on EVERY run (PROGDIR:-based - nothing is written to any
  * system file); on Amiga-Imager-built images it aliases the image's
- * existing AMIGAIMAGER: assign instead (read-only compat — amipkg never
+ * existing AMIGAIMAGER: assign instead (read-only compat - amipkg never
  * creates the legacy name anywhere). */
 #define AMIPKG_DB_PREFIX   "AMIPKG:db/"
 #define AMIPKG_INDEX_PATH  "AMIPKG:packages.json"
@@ -56,14 +56,14 @@ void amipkg_get_installdir(char *out, size_t n);
  * Returns 0 on success. An empty/NULL path clears it (reverts to default). */
 int amipkg_set_installdir(const char *path);
 
-/* Per-PACKAGE install-dir override (config/dir-<id>) — set by `amipkg adopt`
+/* Per-PACKAGE install-dir override (config/dir-<id>) - set by `amipkg adopt`
  * so upgrades land where the user already keeps the app. Falls back to the
  * global dir when absent. */
 void amipkg_get_pkgdir(const char *id, char *out, size_t n);
 int amipkg_set_pkgdir(const char *id, const char *path);
 
 /* Resolve AMIPKG: (home-drawer bootstrap / image alias; AssignLock from
- * whichever exists). No-op on the host build. Call once at startup —
+ * whichever exists). No-op on the host build. Call once at startup -
  * the CLI (ensure_dirs) and BOTH GUIs do. */
 void amipkg_bridge_assigns(void);
 

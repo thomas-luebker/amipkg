@@ -1,5 +1,5 @@
 /*
- * gui.c — amipkg-gui, a GadTools front-end for the AmigaImager package manager.
+ * gui.c - amipkg-gui, a GadTools front-end for the AmigaImager package manager.
  *
  * A Workbench GUI for technical users over the same on-image data the CLI reads
  * (the receipt DB + seeded index via src/core/store.c). Reads are structured
@@ -7,18 +7,18 @@
  * mutating actions (install / remove) shell out to the amipkg CLI so the validated
  * CLI logic is the single source of truth and cannot drift.
  *
- * Toolkit: GadTools (gadtools.library over Intuition) — core OS since 2.0, so
+ * Toolkit: GadTools (gadtools.library over Intuition) - core OS since 2.0, so
  * this runs on every AmigaImager-built image (3.0-3.9) with no MUI/ReAction
  * dependency. v37+ (Kickstart 2.04) required, which every target exceeds.
  *
  * A "View" cycle switches the listview between INSTALLED packages (from the
- * receipt DB) and AVAILABLE packages (the whole seeded index — what the repo
+ * receipt DB) and AVAILABLE packages (the whole seeded index - what the repo
  * offers). Buttons act on the selection: Info always; Install in the Available
  * view; Remove in the Installed view. Results land in a status line at the foot
  * of the window (requesters only for detail or confirmation).
  *
  * PARITY RULE: gui.c and mui.c (the MUI front-end) are maintained in
- * LOCKSTEP — every user-facing feature lands in BOTH in the same change.
+ * LOCKSTEP - every user-facing feature lands in BOTH in the same change.
  */
 
 #ifdef __amigaos__
@@ -52,7 +52,7 @@
 #define AMIPKG_GUI_VERSION "amipkg-gui 0.4"
 
 /* AmigaOS Version-command tag: `Version SYS:Tools/amipkg-gui` reports the
- * exact build — essential for tester feedback. `used` keeps -Os from
+ * exact build - essential for tester feedback. `used` keeps -Os from
  * discarding the unreferenced constant. */
 static const char verstag[] __attribute__((used)) = "$VER: amipkg-gui 0.4 (25.7.2026)";
 
@@ -115,7 +115,7 @@ static int g_sort_recent = 0;
  * RAM: script; INTUITICKS polls its output into the progress line and its
  * completion sentinel for the return code. */
 static int  g_busy = 0;
-static char g_busy_verb[48];      /* "Install of 'foo'" — for the finish message */
+static char g_busy_verb[48];      /* "Install of 'foo'" - for the finish message */
 static long g_busy_ticks = 0;     /* watchdog: ~10 ticks/s while window active */
 #define ASYNC_OUT    "RAM:amipkg-gui.out"
 #define ASYNC_DONE   "RAM:amipkg-gui.done"
@@ -506,7 +506,7 @@ static void action_about(void)
 
 static void action_refresh(void);   /* defined below */
 
-/* "Update Catalog" — fetch the latest signed index from the repo, Ed25519-verify
+/* "Update Catalog" - fetch the latest signed index from the repo, Ed25519-verify
  * it on-device, replace the local catalog, and reload the list. Shells to
  * `C:amipkg update` (needs a TCP/IP stack up). */
 static void action_update_catalog(void)
@@ -552,7 +552,7 @@ static void action_check(void)
     }
 }
 
-/* "Update All" — upgrade every out-of-date package via `C:amipkg upgrade`.
+/* "Update All" - upgrade every out-of-date package via `C:amipkg upgrade`.
  * Each upgrade removes the old version's files first, then installs the new. */
 static void action_upgrade(void)
 {
@@ -659,7 +659,7 @@ static void action_search(struct Gadget *g)
     set_status(b);
 }
 
-/* "Adopt Existing..." — the selected catalog package is ALREADY on this
+/* "Adopt Existing..." - the selected catalog package is ALREADY on this
  * system somewhere: pick its drawer, and amipkg takes over managing it
  * (inventory + receipt + in-place upgrades). jdb78's idea. */
 static void action_adopt(void)
@@ -683,13 +683,13 @@ static void action_adopt(void)
     FreeAslRequest(fr);
 }
 
-/* "Install Drawer..." — pick where recipe-less packages install to, via the ASL
+/* "Install Drawer..." - pick where recipe-less packages install to, via the ASL
  * drawer requester, and persist it (shared with the CLI's `amipkg dir`). */
 static void action_set_dir(void)
 {
     struct FileRequester *fr;
     char cur[256], b[300];
-    if (!AslBase) { set_status("asl.library unavailable — use: amipkg dir <path>"); return; }
+    if (!AslBase) { set_status("asl.library unavailable - use: amipkg dir <path>"); return; }
     amipkg_get_installdir(cur, sizeof cur);
     fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest,
             ASLFR_TitleText,     (ULONG)"Select install drawer",
@@ -770,7 +770,7 @@ static void action_install(void)
     run_async(cmd, verb);
 }
 
-/* "Run" — launch the selected installed package. The executable is found from
+/* "Run" - launch the selected installed package. The executable is found from
  * its receipt file list: prefer a file whose name matches the package id,
  * else the largest AmigaDOS hunk executable it installed. Launched via a RAM:
  * script that first CDs into the program's drawer (assets/config live there). */
@@ -876,7 +876,7 @@ static struct Gadget *build_gadgets(void)
     WORD rowH = fh + 2;
     /* Gadget coords are relative to the window's OUTER top-left, so offset the
      * whole layout below the title bar (WBorTop + font) and inside the left
-     * border — otherwise the header sits under the title bar ("too high"). */
+     * border - otherwise the header sits under the title bar ("too high"). */
     WORD wtop = g_scr->WBorTop + fh + 1;
     WORD wleft = g_scr->WBorLeft;
     WORD findH = fh + 6;
@@ -892,7 +892,7 @@ static struct Gadget *build_gadgets(void)
     memset(&g_gads, 0, sizeof g_gads);
     gad = CreateContext(&glist);
 
-    /* View cycle (Installed / Available) — top-RIGHT, directly above the button
+    /* View cycle (Installed / Available) - top-RIGHT, directly above the button
      * column (its "Installed"/"Available" text is self-describing, no label). */
     memset(&ng, 0, sizeof ng);
     ng.ng_LeftEdge = bx; ng.ng_TopEdge = findY;
@@ -903,7 +903,7 @@ static struct Gadget *build_gadgets(void)
                        GTCY_Labels, (ULONG)g_viewlabels, GTCY_Active, g_view, TAG_END);
     g_gads[GID_VIEW] = gad;
 
-    /* Find box — filters the list by a case-insensitive id substring. */
+    /* Find box - filters the list by a case-insensitive id substring. */
     memset(&ng, 0, sizeof ng);
     ng.ng_LeftEdge = wleft + UI_MARGIN + 44; ng.ng_TopEdge = findY;
     ng.ng_Width = UI_LV_W - 44; ng.ng_Height = findH;
@@ -939,7 +939,7 @@ static struct Gadget *build_gadgets(void)
                        GTCY_Labels, (ULONG)g_sortlabels, GTCY_Active, g_sort_recent, TAG_END);
     g_gads[GID_SORT] = gad;
 
-    /* Listview of packages — rendered in the SYSTEM DEFAULT font, which is
+    /* Listview of packages - rendered in the SYSTEM DEFAULT font, which is
      * guaranteed fixed-width, so the space-aligned columns line up (the screen
      * font is often proportional and made them ragged). */
     {
@@ -995,7 +995,7 @@ static struct Gadget *build_gadgets(void)
                        GTTX_Text, (ULONG)g_statusbuf, GTTX_Border, TRUE, GTTX_Clipped, TRUE, TAG_END);
     g_gads[GID_STATUS] = gad;
 
-    /* Progress line — the running operation's last output line. */
+    /* Progress line - the running operation's last output line. */
     memset(&ng, 0, sizeof ng);
     ng.ng_LeftEdge = wleft + UI_MARGIN; ng.ng_TopEdge = progY;
     ng.ng_Width = UI_LV_W + UI_GAP * 2 + UI_BTN_W; ng.ng_Height = statusH;
@@ -1040,7 +1040,7 @@ static int open_ui(void)
         WA_Flags,        WFLG_DRAGBAR | WFLG_DEPTHGADGET | WFLG_CLOSEGADGET
                        | WFLG_ACTIVATE | WFLG_SMART_REFRESH,
         /* Render menus with the screen's NewLook pens (white menu, black
-         * text on a standard WB scheme) — without this Intuition falls back
+         * text on a standard WB scheme) - without this Intuition falls back
          * to the 1.x-style pens: black menu, grey text (tester report). */
         WA_NewLookMenus, TRUE,
         WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_REFRESHWINDOW | IDCMP_MENUPICK
@@ -1198,7 +1198,7 @@ static int gui_run(void)
 
 /* Run on a guaranteed 128 KB stack (Workbench/Shell may launch us with as
  * little as 4 KB): the index parse recurses and GadTools needs headroom. Same
- * StackSwap idiom as the CLI — globals carry the result across the swap. */
+ * StackSwap idiom as the CLI - globals carry the result across the swap. */
 #include <exec/tasks.h>
 
 static struct StackSwapStruct g_sss;

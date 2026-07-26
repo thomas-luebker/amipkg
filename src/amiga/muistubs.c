@@ -1,9 +1,9 @@
 /*
- * muistubs.c — out-of-line varargs stubs for muimaster.library.
+ * muistubs.c - out-of-line varargs stubs for muimaster.library.
  *
  * These MUST live in their own translation unit. As static __inline
  * functions in the header, GCC 6 (-Os) saw that the callee never uses
- * va_arg and legally DROPPED the variadic arguments at every call site —
+ * va_arg and legally DROPPED the variadic arguments at every call site -
  * every MUI object was created with a garbage tag list (window title,
  * list format etc. never even made it into the binary). Symptoms varied
  * with whatever lay on the stack: "works but rough" under UAE, window
@@ -11,7 +11,7 @@
  *
  * In a separate TU the caller cannot know the args are unread and must
  * pass them all per the m68k stack ABI; (&tag1) then really is the start
- * of a contiguous tag list — the classic Amiga stub idiom.
+ * of a contiguous tag list - the classic Amiga stub idiom.
  */
 #ifdef __amigaos__
 

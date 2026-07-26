@@ -1,11 +1,11 @@
 /*
- * arecipe.h — amipkg portable core
+ * arecipe.h - amipkg portable core
  *
- * Parse a package's install recipe (the "recipe":{ops:[…]} block of an index
- * entry) into typed ops — the C mirror of AmigaPackageKit's PackageIndex
+ * Parse a package's install recipe (the "recipe":{ops:[...]} block of an index
+ * entry) into typed ops - the C mirror of AmigaPackageKit's PackageIndex
  * RecipeOp vocabulary. Parsing is portable/host-tested here; EXECUTING the
  * ops (file copy, protect bits, script inject) is the AmigaOS-only next
- * milestone in src/amiga/. Only the portable ops are represented — build-only
+ * milestone in src/amiga/. Only the portable ops are represented - build-only
  * transforms (icon-patch/adf-unwrap) never appear in a Tier-A recipe.
  */
 #ifndef AMIPKG_ARECIPE_H
@@ -44,7 +44,7 @@ typedef struct {
     char value[128];
     char name[64];
     /* preScript / postScript: the inline AmigaDOS lines joined with \n.
-     * Deliberately in arecipe (<=32 ops), NOT arun_plan (512 ops) — keeping
+     * Deliberately in arecipe (<=32 ops), NOT arun_plan (512 ops) - keeping
      * arun_op small keeps the plan's static BSS ~362 KB (1MB-machine budget). */
     char script[640];
 } arecipe_op;

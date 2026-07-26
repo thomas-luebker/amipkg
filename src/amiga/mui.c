@@ -1,8 +1,8 @@
 /*
- * mui.c — amipkg-mui, the MUI front-end for the AmigaPKG package manager.
+ * mui.c - amipkg-mui, the MUI front-end for the AmigaPKG package manager.
  *
  * The polished alternative to the zero-dependency GadTools GUI (gui.c):
- * resizable window, real list columns, description pane — the look Amiga
+ * resizable window, real list columns, description pane - the look Amiga
  * users know from YAM/IBrowse. Needs MUI 3.8+ (muimaster.library v19);
  * `amipkg install mui38` bootstraps it. Feature-parity with gui.c: view/
  * category/sort filters, Find, catalog update, check/update-all, install
@@ -16,7 +16,7 @@
  * Headers: vendor/mui/include (MUI 3.8 developer kit, freely distributable;
  * see vendor/mui/README). Link: -lamiga (DoMethod + HookEntry).
  *
- * PARITY RULE: gui.c (GadTools) and mui.c are maintained in LOCKSTEP — every
+ * PARITY RULE: gui.c (GadTools) and mui.c are maintained in LOCKSTEP - every
  * user-facing feature lands in BOTH front-ends in the same change. Neither is
  * the "lesser" GUI; GadTools covers stock systems, MUI covers preference.
  */
@@ -123,7 +123,8 @@ static void trace(const char *msg)
     FILE *f = fopen("AMIPKG:amipkg-mui.trace", "a");
     if (!f) f = fopen("RAM:amipkg-mui.trace", "a");
     if (f) { fprintf(f, "%s\n", msg); fclose(f); }
-    printf("amipkg-mui: %s\n", msg);
+    /* No printf here: stdio would OPEN A CONSOLE WINDOW when launched from
+     * Workbench/DOpus (tester report). Failure paths print explicitly. */
 }
 
 /* ---- helpers -------------------------------------------------------------- */
@@ -620,7 +621,7 @@ static void action_run(void)
     }
 }
 
-/* "Adopt Existing..." — parity with gui.c (jdb78's idea). */
+/* "Adopt Existing..." - parity with gui.c (jdb78's idea). */
 static void action_adopt(void)
 {
     struct FileRequester *fr;
@@ -829,7 +830,7 @@ static int build_app(void)
     if (!app) return 0;
     trace("build_app: application tree created, wiring notifications");
 
-    /* notifications → ReturnIDs */
+    /* notifications -> ReturnIDs */
     DoMethod(app, MUIM_Notify, MUIA_Application_MenuAction, MUIV_EveryTime,
              (ULONG)app, 2, MUIM_Application_ReturnID, MUIV_TriggerValue);
     DoMethod(win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE,

@@ -112,6 +112,8 @@ Both offer the same features:
 @{b}You already have the app? Adopt it.@{ub}
 
 You installed Visage years ago in Work:Grafik/Visage? Tell amipkg:
+(Adopted the wrong drawer? Just adopt again - the old record is
+replaced, no files are touched.)
 
   amipkg adopt visage Work:Grafik/Visage
   amipkg adopt visage Work:Grafik/Visage 39.21   (if you know the version)
@@ -172,6 +174,11 @@ lines), and only then signed in.
   from the drawer's location every start. Integrated setup: delete
   the old "amipkg home" block from S:User-Startup and run
   Install-System again from the new location.
+
+@{b}"Cannot delete the amipkg drawer - object in use"@{ub}
+  The session assign still points at it. Run:
+    Assign AMIPKG: REMOVE
+  (plus close any running amipkg program), then delete the drawer.
 
 @{b}A package misbehaves after manual file edits@{ub}
   `amipkg doctor` lists modified/missing files per package;

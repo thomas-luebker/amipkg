@@ -1,5 +1,5 @@
 /*
- * averify.c — on-device Ed25519 verification (see averify.h). Uses TweetNaCl's
+ * averify.c - on-device Ed25519 verification (see averify.h). Uses TweetNaCl's
  * crypto_sign_open (Ed25519, RFC 8032; SHA-512 included). Standard Ed25519, so
  * it verifies signatures produced by the app's CryptoKit Curve25519.Signing.
  */

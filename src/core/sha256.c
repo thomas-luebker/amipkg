@@ -1,4 +1,4 @@
-/* sha256.c — amipkg portable core. FIPS 180-4 SHA-256, byte-oriented. */
+/* sha256.c - amipkg portable core. FIPS 180-4 SHA-256, byte-oriented. */
 
 #include "sha256.h"
 

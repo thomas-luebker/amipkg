@@ -1,4 +1,4 @@
-/* arecipe.c — amipkg portable core. Recipe-op parsing (mirror of RecipeOp). */
+/* arecipe.c - amipkg portable core. Recipe-op parsing (mirror of RecipeOp). */
 
 #include "arecipe.h"
 #include "ajson.h"

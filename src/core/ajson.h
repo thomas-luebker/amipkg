@@ -1,9 +1,9 @@
 /*
- * ajson.h — amipkg portable core
+ * ajson.h - amipkg portable core
  *
- * Minimal JSON tree parser for the packages.json index — deliberately small
+ * Minimal JSON tree parser for the packages.json index - deliberately small
  * (the schema is flat by design so a 68k parser stays trivial). Supports
- * objects, arrays, strings (with \" \\ \/ \n \r \t and \uXXXX→'?' escapes),
+ * objects, arrays, strings (with \" \\ \/ \n \r \t and \uXXXX->'?' escapes),
  * numbers (long), true/false/null. Everything heap-allocated; free with
  * ajson_free on the root.
  */

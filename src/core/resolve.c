@@ -1,4 +1,4 @@
-/* resolve.c — amipkg portable core. Mirror of DependencyResolver (Swift). */
+/* resolve.c - amipkg portable core. Mirror of DependencyResolver (Swift). */
 
 #include "resolve.h"
 #include <string.h>

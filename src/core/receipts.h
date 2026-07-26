@@ -1,10 +1,10 @@
 /*
- * receipts.h — amipkg portable core
+ * receipts.h - amipkg portable core
  *
  * The installed-package receipt DB, C mirror of AmigaPackageKit's ReceiptDB
  * line formats (docs/agent/package-manager-plan.md in the AmigaImager repo):
  *   installed.txt        id|version|indexVersion|installEpoch
- *   files/<id>.files     path|sha256   (bare path = no digest → must ask)
+ *   files/<id>.files     path|sha256   (bare path = no digest -> must ask)
  *   scripts/<id>.edits   target|overlayName|scriptVersion
  * The formats are line-oriented text precisely so THIS parser stays trivial.
  */

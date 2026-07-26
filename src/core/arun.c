@@ -1,11 +1,11 @@
-/* arun.c — amipkg portable core. Recipe execution PLAN (mirror of RecipeRunner). */
+/* arun.c - amipkg portable core. Recipe execution PLAN (mirror of RecipeRunner). */
 
 #include "arun.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
-/* fnmatch with FNM_CASEFOLD and '*' spanning '/' — the exact matching
+/* fnmatch with FNM_CASEFOLD and '*' spanning '/' - the exact matching
  * AminetInterimStager uses (POSIX fnmatch(..., FNM_CASEFOLD), no FNM_PATHNAME).
  * Iterative backtracking; '?' matches one char, '*' matches any run. */
 int arun_glob_match(const char *pat, const char *str)
@@ -31,7 +31,7 @@ static void copy_str(char *dst, size_t dstsize, const char *src)
     dst[n] = '\0';
 }
 
-/* '\' → '/' normalization (recipes may still carry raw CSV separators). */
+/* '\' -> '/' normalization (recipes may still carry raw CSV separators). */
 static void normalize(char *s)
 {
     for (; *s; s++) if (*s == '\\') *s = '/';
@@ -108,7 +108,7 @@ static void plan_copy(const arecipe_op *op, arun_plan *plan,
             {
                 const char *leaf = (!has_star && rename[0]) ? basename_of(rename) : base;
                 if (dest[0] && dest[strlen(dest) - 1] == ':')
-                    /* assign-absolute dest ("AMIPKG:"): join without '/' —
+                    /* assign-absolute dest ("AMIPKG:"): join without '/' -
                      * "X:/y" would mean the PARENT of X: in AmigaDOS. */
                     snprintf(o->dest, sizeof o->dest, "%s%s", dest, leaf);
                 else if (dest[0])
@@ -128,7 +128,7 @@ int arun_plan_build(const arecipe *recipe,
     memset(out, 0, sizeof *out);
     if (recipe->has_unknown) return 1;   /* refuse a recipe we can't fully run */
     /* Schema 2 = assign-absolute placeFile dests ("AMIPKG:x"). Refuse
-     * anything newer than we understand — a silent mis-run is worse. */
+     * anything newer than we understand - a silent mis-run is worse. */
     if (recipe->schema > 2) return 1;
 
     for (i = 0; i < recipe->op_count; i++) {
@@ -139,7 +139,7 @@ int arun_plan_build(const arecipe *recipe,
             plan_copy(op, out, entries, is_dir, n_entries);
             break;
         case AROP_STRIP_JUNK:
-            /* handled implicitly during copy (junk is never copied) — no op */
+            /* handled implicitly during copy (junk is never copied) - no op */
             break;
         case AROP_MERGE_NESTED:
             /* Foo/Foo folding is a dest-tree concern the AmigaOS layer applies

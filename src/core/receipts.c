@@ -1,4 +1,4 @@
-/* receipts.c — amipkg portable core. Mirror of ReceiptDB (Swift). */
+/* receipts.c - amipkg portable core. Mirror of ReceiptDB (Swift). */
 
 #include "receipts.h"
 #include <stdio.h>

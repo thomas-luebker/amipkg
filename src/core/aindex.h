@@ -1,9 +1,9 @@
 /*
- * aindex.h — amipkg portable core
+ * aindex.h - amipkg portable core
  *
  * The packages.json subset the on-Amiga client needs, parsed via ajson.
  * The index the client reads is the HOST-VERIFIED SEEDED copy (Phase-3
- * trust model): amipkg never refreshes it over the network — SHA-256 of
+ * trust model): amipkg never refreshes it over the network - SHA-256 of
  * downloaded archives is checked against this trusted local index.
  */
 #ifndef AMIPKG_AINDEX_H

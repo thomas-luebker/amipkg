@@ -1,4 +1,4 @@
-/* aver.c — amipkg portable core. Mirror of PackageVersionOrder (Swift). */
+/* aver.c - amipkg portable core. Mirror of PackageVersionOrder (Swift). */
 
 #include "aver.h"
 #include <ctype.h>

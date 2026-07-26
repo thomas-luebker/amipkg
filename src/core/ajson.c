@@ -1,4 +1,4 @@
-/* ajson.c — amipkg portable core. Minimal JSON tree parser. */
+/* ajson.c - amipkg portable core. Minimal JSON tree parser. */
 
 #include "ajson.h"
 #include <ctype.h>
@@ -36,7 +36,7 @@ static void skip_ws(P *ps)
         ps->p++;
 }
 
-/* Parse a JSON string (opening quote consumed by caller? no — expects `"`).
+/* Parse a JSON string (opening quote consumed by caller? no - expects `"`).
  * Returns heap copy, NULL on error. */
 static char *parse_string(P *ps)
 {

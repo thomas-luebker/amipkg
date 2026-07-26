@@ -108,7 +108,8 @@ the signed catalog. A tampered catalog or archive is refused.
 Uninstall amipkg
 ----------------
     Delete the drawer you unpacked amipkg into. That is ALL - amipkg
-    never touches any system file.
+    never touches any system file. (If the Shell says the drawer is in
+    use: `Assign AMIPKG: REMOVE` first - the session assign holds a lock.)
 
 
 Repository / feedback

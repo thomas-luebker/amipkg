@@ -1,5 +1,5 @@
 /*
- * adfread.h — minimal read-only OFS/FFS ADF (Amiga floppy image) extractor.
+ * adfread.h - minimal read-only OFS/FFS ADF (Amiga floppy image) extractor.
  *
  * Some Aminet packages are distributed as a raw .adf disk image rather than an
  * LHA archive. This reader parses the OFS/FFS filesystem inside such an image

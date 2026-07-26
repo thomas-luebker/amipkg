@@ -1,5 +1,5 @@
 /*
- * store.c — amipkg on-image data access. See store.h.
+ * store.c - amipkg on-image data access. See store.h.
  * Extracted from main.c so the CLI and the GUI share one implementation.
  */
 #include "store.h"
@@ -83,7 +83,7 @@ void amipkg_bridge_assigns(void)
 {
 #ifdef __amigaos__
     /* Suppress the system "Please insert volume ..." requester while we
-     * PROBE assigns that may not exist — without this, the probes themselves
+     * PROBE assigns that may not exist - without this, the probes themselves
      * spam requesters on systems that were never set up (tester report). */
     struct Process *pr = (struct Process *)FindTask(NULL);
     APTR oldwin = pr->pr_WindowPtr;
@@ -94,14 +94,14 @@ void amipkg_bridge_assigns(void)
     if (l) UnLock(l);
     else {
         /* Migration read (never created): an Amiga-Imager-built image
-         * provides AMIGAIMAGER: — alias AMIPKG: to the same drawer. */
+         * provides AMIGAIMAGER: - alias AMIPKG: to the same drawer. */
         src = Lock((STRPTR)"AMIGAIMAGER:", ACCESS_READ);
         if (src) AssignLock((STRPTR)"AMIPKG", src);   /* consumes the lock */
         else {
-            /* Standalone: amipkg lives WHERE IT WAS UNPACKED OR COPIED —
+            /* Standalone: amipkg lives WHERE IT WAS UNPACKED OR COPIED -
              * home is the drawer holding the running binary (PROGDIR:),
              * like MUI:. Catalog, cache and receipt DB sit next to it. */
-            BPTR home = GetProgramDir();     /* shared lock — do NOT unlock */
+            BPTR home = GetProgramDir();     /* shared lock - do NOT unlock */
             src = home ? DupLock(home) : Lock((STRPTR)"", ACCESS_READ);
             if (src) AssignLock((STRPTR)"AMIPKG", src);
         }
@@ -109,7 +109,7 @@ void amipkg_bridge_assigns(void)
 
     /* NO persistence: amipkg never writes to S:User-Startup or any other
      * system file. The bridge runs on EVERY start (CLI dispatch + both GUI
-     * launches), so the assign is simply re-created per session — zero
+     * launches), so the assign is simply re-created per session - zero
      * footprint outside the home drawer. */
     pr->pr_WindowPtr = oldwin;
 #endif

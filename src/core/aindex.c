@@ -1,4 +1,4 @@
-/* aindex.c — amipkg portable core. packages.json subset parser. */
+/* aindex.c - amipkg portable core. packages.json subset parser. */
 
 #include "aindex.h"
 #include "ajson.h"

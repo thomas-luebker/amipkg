@@ -1,10 +1,10 @@
 /*
- * install.c — amipkg AmigaOS execution layer
+ * install.c - amipkg AmigaOS execution layer
  *
  * Executes a recipe plan (arun_plan) against a downloaded archive: unpack via
  * the mandatory C:lha, walk the extract tree, run the copy/set-exec/script-
  * inject ops with dos.library, and record the receipt. This is the on-Amiga
- * half of install — the portable half (arun_plan_build, host-tested) decided
+ * half of install - the portable half (arun_plan_build, host-tested) decided
  * WHAT to do; this does it.
  *
  * UNVERIFIED ON HARDWARE: written to the documented dos.library API; compile
@@ -96,7 +96,7 @@ static int copy_file(const char *src, const char *dst)
     return 1;
 }
 
-/* SetProtection: give a path the script (s) bit, clearing (e) is not needed —
+/* SetProtection: give a path the script (s) bit, clearing (e) is not needed -
  * matches copyFromHost's "0x40 script bit for exec files" for a script. The
  * plan's SET_EXEC scope maps to a subtree; we set the s-bit on plain files
  * there. NOTE: build parity keeps binaries WITHOUT the s-bit; a full port
@@ -166,7 +166,7 @@ static void ensure_one(const char *path)
 
 /* Make sure amipkg's working drawers exist before we write to them. The
  * AMIPKG: assign exists after the bridge, but its cache/ and db/ sub-
- * drawers are not guaranteed present on every image — create them here so a
+ * drawers are not guaranteed present on every image - create them here so a
  * fetch/install never fails on a missing directory. */
 void amipkg_ensure_dirs(void)
 {
@@ -180,7 +180,7 @@ void amipkg_ensure_dirs(void)
 }
 
 /* Free bytes on the volume holding `path` (e.g. "SYS:" / "AMIPKG:cache/").
- * -1 when unknown (RAM: and odd handlers) — callers must not block on that. */
+ * -1 when unknown (RAM: and odd handlers) - callers must not block on that. */
 long long amipkg_volume_free(const char *path)
 {
     struct InfoData *info;
@@ -338,7 +338,7 @@ size_t amipkg_execute(const arun_plan *plan, const char *extract_dir,
         char src[512], dst[512];
         switch (op->kind) {
         case ARUN_COPY: {
-            /* A dest carrying an assign/volume (":" anywhere) is ABSOLUTE —
+            /* A dest carrying an assign/volume (":" anywhere) is ABSOLUTE -
              * e.g. "AMIPKG:amipkg" (self-update into the home drawer);
              * everything else stays boot_root-relative. */
             const char *root = strchr(op->dest, ':') ? "" : boot_root;
@@ -370,7 +370,7 @@ size_t amipkg_execute(const arun_plan *plan, const char *extract_dir,
 
 /* Execute one inline pre/post-install script: FailAt header + the recipe's
  * lines, via Execute of a RAM: file. Returns the script's worst return code.
- * The lines were REVIEWED into the signed catalog (pre-post-script-v1) —
+ * The lines were REVIEWED into the signed catalog (pre-post-script-v1) -
  * this is curated native code, same trust rung as the Installer hatch. */
 long amipkg_run_inline_script(const char *script, const char *label)
 {
@@ -396,10 +396,10 @@ size_t amipkg_run_recipe(const arecipe *recipe, const char *extract_dir,
     static char pool[ARUN_MAX_OPS][256];
     static int is_dir[ARUN_MAX_OPS];
     static const char *entries[ARUN_MAX_OPS];
-    static arun_plan plan;   /* ~362 KB — MUST be static, not on the 4 KB Shell stack */
+    static arun_plan plan;   /* ~362 KB - MUST be static, not on the 4 KB Shell stack */
     size_t n, i, written;
 
-    /* Pre-install scripts: a failure (rc >= 10) ABORTS the install — they
+    /* Pre-install scripts: a failure (rc >= 10) ABORTS the install - they
      * guard preconditions (stop a running instance, make an assign). */
     for (i = 0; i < recipe->op_count; i++) {
         if (recipe->ops[i].type != AROP_PRE_SCRIPT) continue;
@@ -416,7 +416,7 @@ size_t amipkg_run_recipe(const arecipe *recipe, const char *extract_dir,
     written = amipkg_execute(&plan, extract_dir, boot_root, out_paths, max);
 
     /* Post-install scripts: tidy-ups (ENVARC defaults, obsolete-file removal).
-     * A failure here is a WARNING — the files are already placed. */
+     * A failure here is a WARNING - the files are already placed. */
     if (written > 0) {
         for (i = 0; i < recipe->op_count; i++) {
             if (recipe->ops[i].type != AROP_POST_SCRIPT) continue;
@@ -430,7 +430,7 @@ size_t amipkg_run_recipe(const arecipe *recipe, const char *extract_dir,
 /* Generic install for a recipe-less package (the fetch-only Aminet entries):
  * copy the whole extracted tree under `dest_root` (typically SYS:Programs), so
  * an archive that unpacked into e.g. "Fitz/" lands as SYS:Programs/Fitz/. This
- * is the "drop the Aminet app into a drawer" a user would do by hand — a
+ * is the "drop the Aminet app into a drawer" a user would do by hand - a
  * best-effort install (apps needing their own Installer may need manual setup).
  * Returns the count of installed files (recorded for clean removal). */
 size_t amipkg_install_generic(const char *extract_dir, const char *dest_root,
