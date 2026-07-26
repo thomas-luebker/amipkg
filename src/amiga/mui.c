@@ -880,7 +880,24 @@ static int gui_run(void)
         goto out;
     }
     if (!IntuitionBase || !UtilityBase) goto out;
-    trace("libraries open (muimaster/intuition/utility/asl)");
+    {
+        char b[120];
+        int mui_assign = 0;
+        struct Process *pr = (struct Process *)FindTask(NULL);
+        APTR oldwin = pr->pr_WindowPtr;
+        BPTR l;
+        pr->pr_WindowPtr = (APTR)-1;
+        l = Lock((STRPTR)"MUI:", ACCESS_READ);
+        if (l) { mui_assign = 1; UnLock(l); }
+        pr->pr_WindowPtr = oldwin;
+        snprintf(b, sizeof b, "libraries open: muimaster v%d.%d, MUI: assign %s",
+                 (int)MUIMasterBase->lib_Version, (int)MUIMasterBase->lib_Revision,
+                 mui_assign ? "present" : "MISSING");
+        trace(b);
+        if (!mui_assign)
+            trace("WARNING: no MUI: assign - incomplete MUI install? "
+                  "(after `amipkg install mui38` you must REBOOT once)");
+    }
 
     if (!build_app()) { printf("amipkg-mui: could not create the application.\n"); goto out; }
 
@@ -915,7 +932,17 @@ static int gui_run(void)
     {
         ULONG opened = 0;
         get(win, MUIA_Window_Open, &opened);
-        if (!opened) { printf("amipkg-mui: could not open the window.\n"); goto out; }
+        if (!opened) {
+            char b[160];
+            snprintf(b, sizeof b,
+                     "window did NOT open. muimaster v%d.%d; chip free %ld KB, total free %ld KB. "
+                     "Usual causes: incomplete MUI install (no MUI: tree - reboot after installing MUI), "
+                     "broken MUI prefs, or a full/too-deep screen.",
+                     (int)MUIMasterBase->lib_Version, (int)MUIMasterBase->lib_Revision,
+                     (long)(AvailMem(MEMF_CHIP) / 1024), (long)(AvailMem(MEMF_ANY) / 1024));
+            trace(b);
+            goto out;
+        }
     }
 
     trace("window is open, entering main loop");

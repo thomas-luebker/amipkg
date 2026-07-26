@@ -640,6 +640,15 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
     { FILE *f = fopen(AMIPKG_DB_PREFIX "installed.txt", "a");
       if (f) { fprintf(f, "%s|%s|%ld|0\n", e->id, e->version, idx->index_version); fclose(f); } }
     printf("Installed %s %s: %lu file(s).\n", e->id, e->version, (unsigned long)n);
+    if (e->has_recipe) {
+        size_t k;
+        for (k = 0; k < recipe.op_count; k++)
+            if (recipe.ops[k].type == AROP_SCRIPT_INJECT) {
+                printf("NOTE: S:User-Startup was extended (assigns for %s).\n"
+                       "      REBOOT once to activate them before using it.\n", e->id);
+                break;
+            }
+    }
     if (tree) ajson_free(tree);
     return 0;
 }
