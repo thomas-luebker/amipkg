@@ -1,5 +1,5 @@
 @database amipkg.guide
-@$VER: amipkg.guide 0.5.9 (27.7.2026)
+@$VER: amipkg.guide 0.6.0 (28.7.2026)
 @author "Thomas Luebker"
 @node MAIN "amipkg - the AmigaPKG package manager"
 
@@ -72,6 +72,10 @@ something that cannot run.
   amipkg info <id>           details for one package
   amipkg install <id>        download + verify + install WITH deps
   amipkg install <id> DRYRUN preview the plan, change nothing
+  amipkg submit <id> <url> [desc]
+                             author a catalog entry ON YOUR AMIGA and
+                             send it in for review (your machine
+                             computes the SHA-256 pin)
   amipkg adopt <id> <drawer> manage an app you ALREADY have
   amipkg list                what is installed
   amipkg check               which installed packages have updates
@@ -149,8 +153,8 @@ In the GUIs: select the package, then Package menu ->
    and so are mirrors and redirects.
 
 Nothing reaches the catalog unsigned: packages are submitted as pull
-requests, reviewed by a maintainer (licensing + any native-code
-lines), and only then signed in.
+requests OR via @{b}amipkg submit@{ub} straight from an Amiga, reviewed by a
+maintainer (licensing + any native-code lines), and only then signed in.
 @endnode
 
 @node TROUBLE "Troubleshooting"

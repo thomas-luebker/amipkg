@@ -48,6 +48,7 @@ int http_available(void);
 void http_cleanup(void);
 int http_get(const char *url, FILE *out, long *bytes_out);
 int http_get_file(const char *url, const char *path, long *bytes_out);
+int http_post_json(const char *url, const char *body, char *resp, size_t respsize);
 int amipkg_extract(const char *archive, const char *destdir);
 size_t amipkg_run_recipe(const arecipe *recipe, const char *extract_dir,
                          const char *boot_root, char (*out_paths)[256], size_t max);
@@ -112,6 +113,9 @@ static int http_get(const char *url, FILE *out, long *bytes_out)
   printf("amipkg: networking is Amiga-only in the host build\n"); return 1; }
 static int http_get_file(const char *u, const char *p, long *b)
 { (void)u; (void)p; (void)b;
+  printf("amipkg: networking is Amiga-only in the host build\n"); return 1; }
+static int http_post_json(const char *u, const char *b, char *r, size_t rs)
+{ (void)u; (void)b; (void)r; (void)rs;
   printf("amipkg: networking is Amiga-only in the host build\n"); return 1; }
 static void http_cleanup(void) {}
 static int amipkg_extract(const char *a, const char *d)
@@ -840,6 +844,114 @@ static int cmd_upgrade(const char *only_id)
     return rc;
 }
 
+/* "submit <id> <archive-url> [description...]" - author a catalog entry ON
+ * THE AMIGA and hand it to the maintainer: fetch the archive, compute its
+ * SHA-256 pin locally, harvest Version:/Short: from the Aminet .readme when
+ * present, compose the packages/<id>.json draft, and POST it to the
+ * submission dropbox on amiga-imager.org. From there the Pi courier
+ * validates it and opens a review branch - NOTHING enters the signed catalog
+ * without the usual human review + offline signature. The Amiga is the
+ * authoring tool, not a trust shortcut. */
+static void json_escape(const char *in, char *out, size_t outsize)
+{
+    size_t o = 0;
+    for (; *in && o < outsize - 2; in++) {
+        unsigned char c = (unsigned char)*in;
+        if (c == '"' || c == '\\') { out[o++] = '\\'; out[o++] = (char)c; }
+        else if (c < 32) out[o++] = ' ';
+        else out[o++] = (char)c;
+    }
+    out[o] = '\0';
+}
+
+static int cmd_submit(const char *id, const char *url, const char *desc)
+{
+    static char json[3072], resp[512], hex[65], readme_url[560];
+    static char version[48] = "-";
+    static char shortdesc[160] = "";
+    char descesc[512];
+    const char *p;
+    long size = 0;
+    FILE *f;
+
+    for (p = id; *p; p++)
+        if (!((*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9') || *p == '-')) {
+            printf("amipkg: id must be lowercase letters/digits/dashes: %s\n", id);
+            return 5;
+        }
+    if (strlen(id) < 2 || strlen(id) > 32) { printf("amipkg: id length 2..32.\n"); return 5; }
+    if (strncmp(url, "http://", 7) != 0 && strncmp(url, "https://", 8) != 0) {
+        printf("amipkg: the archive URL must start with http:// or https://\n");
+        return 5;
+    }
+    {
+        size_t ul = strlen(url);
+        if (!(ul > 4 && (strcmp(url + ul - 4, ".lha") == 0 || strcmp(url + ul - 4, ".adf") == 0))) {
+            printf("amipkg: the client can only install .lha or .adf archives.\n");
+            return 5;
+        }
+    }
+
+    amipkg_ensure_dirs();
+    printf("Fetching the archive to pin its SHA-256...\n");
+    if (http_get_file(url, amipkg_data_path("cache/submit.tmp"), &size) != 0 || size <= 0) {
+        printf("amipkg: could not download the archive - nothing submitted.\n");
+        return 10;
+    }
+    if (sha256_of_file(amipkg_data_path("cache/submit.tmp"), hex) != 0) {
+        printf("amipkg: cannot hash the download.\n");
+        return 10;
+    }
+    remove(amipkg_data_path("cache/submit.tmp"));
+
+    /* Aminet convention: <archive>.readme next to the archive. Best-effort. */
+    snprintf(readme_url, sizeof readme_url, "%s.readme", url);
+    f = fopen(amipkg_data_path("cache/submit.readme"), "wb");
+    if (f) {
+        long rn = 0;
+        int ok = http_get(readme_url, f, &rn) == 0;
+        fclose(f);
+        if (ok && rn > 0) {
+            char *text = read_file(amipkg_data_path("cache/submit.readme"));
+            if (text) {
+                char *ln = strstr(text, "Version:");
+                if (ln) { ln += 8; while (*ln == ' ') ln++;
+                    { size_t k = 0; while (ln[k] && ln[k] != '\n' && ln[k] != '\r' && k < sizeof version - 1) { version[k] = ln[k]; k++; } version[k] = 0; } }
+                ln = strstr(text, "Short:");
+                if (ln) { ln += 6; while (*ln == ' ') ln++;
+                    { size_t k = 0; while (ln[k] && ln[k] != '\n' && ln[k] != '\r' && k < sizeof shortdesc - 1) { shortdesc[k] = ln[k]; k++; } shortdesc[k] = 0; } }
+                free(text);
+            }
+        }
+        remove(amipkg_data_path("cache/submit.readme"));
+    }
+
+    json_escape(desc && desc[0] ? desc : (shortdesc[0] ? shortdesc : "(no description - maintainer, please fill in)"),
+                descesc, sizeof descesc);
+    {
+        char veresc[64], urlesc[560];
+        json_escape(version, veresc, sizeof veresc);
+        json_escape(url, urlesc, sizeof urlesc);
+        snprintf(json, sizeof json,
+            "{\"id\":\"%s\",\"name\":\"%s\",\"version\":\"%s\","
+            "\"category\":\"Utilities\",\"description\":\"%s\","
+            "\"archive\":{\"url\":\"%s\",\"sha256\":\"%s\",\"sizeBytes\":%ld},"
+            "\"deps\":[],\"requirements\":{},\"tier\":\"A\","
+            "\"submittedVia\":\"amipkg " AMIPKG_VERSION " on-Amiga\"}",
+            id, id, veresc, descesc, urlesc, hex, size);
+    }
+
+    printf("Submitting %s (%s, %ld bytes, sha %.12s...) for review...\n", id, version, size, hex);
+    if (http_post_json("http://amiga-imager.org/packages/submit", json, resp, sizeof resp) != 0) {
+        printf("amipkg: submission failed%s%s\n", resp[0] ? ": " : ".", resp);
+        return 10;
+    }
+    printf("Submitted! %s\n", resp[0] ? resp : "");
+    printf("A maintainer reviews every submission before it is signed into\n");
+    printf("the catalog - watch https://github.com/thomas-luebker/amiga-pkg\n");
+    return 0;
+}
+
 static int cmd_verify(const char *file, const char *expected)
 {
     char hex[65];
@@ -1116,7 +1228,7 @@ static int dispatch(int argc, char **argv)
     int rc = 5;
     if (argc < 2) {
         printf("amipkg " AMIPKG_VERSION " - the AmigaPKG package manager\n");
-        printf("usage: amipkg update | list | avail [term] | check | doctor | info <id> | fetch <id> | install <id> [DRYRUN] | adopt <id> <drawer> [<ver>] | upgrade [<id>] | dir [<path>] | verify <file> <sha256> | remove <id> [FORCE]\n");
+        printf("usage: amipkg update | list | avail [term] | check | doctor | info <id> | fetch <id> | install <id> [DRYRUN] | submit <id> <url> [desc] | adopt <id> <drawer> [<ver>] | upgrade [<id>] | dir [<path>] | verify <file> <sha256> | remove <id> [FORCE]\n");
         return 5;
     }
     amipkg_ensure_dirs();   /* create AMIPKG:cache + db + config drawers if absent */
@@ -1126,6 +1238,17 @@ static int dispatch(int argc, char **argv)
     else if (strcmp(argv[1], "list") == 0) rc = cmd_list();
     else if (strcmp(argv[1], "avail") == 0) rc = cmd_avail(argc >= 3 ? argv[2] : NULL);
     else if (strcmp(argv[1], "check") == 0) rc = cmd_check();
+    else if (strcmp(argv[1], "submit") == 0) {
+        if (argc < 4) { printf("usage: amipkg submit <id> <archive-url> [description]\n"); rc = 5; }
+        else {
+            static char d[512]; int i2; d[0] = 0;
+            for (i2 = 4; i2 < argc; i2++) {
+                if (d[0]) strncat(d, " ", sizeof d - strlen(d) - 1);
+                strncat(d, argv[i2], sizeof d - strlen(d) - 1);
+            }
+            rc = cmd_submit(argv[2], argv[3], d);
+        }
+    }
     else if (strcmp(argv[1], "info") == 0)
         rc = argc >= 3 ? cmd_info(argv[2]) : usage_needs("info", "<id>");
     else if (strcmp(argv[1], "fetch") == 0)

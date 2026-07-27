@@ -342,6 +342,103 @@ fail:
 
 /* GET `url` into open FILE `out`, following up to 3 redirects. Returns 0 on
  * success (HTTP 200, body written), nonzero otherwise. */
+
+/* POST a small JSON body (a package submission) and capture the response
+ * body. Plain-HTTP only in practice (the submission endpoint lives on
+ * amiga-imager.org, reviewed + signed later - the transport is untrusted by
+ * design, like everything else). Returns 0 on HTTP 200, nonzero otherwise. */
+int http_post_json(const char *url, const char *body, char *resp, size_t respsize)
+{
+    char host[128], path[512];
+    static char req[1024], buf[4096];
+    long port;
+    int tls = 0;
+    struct hostent *he;
+    struct sockaddr_in sa;
+    int sock, status = 0, header_done = 0;
+    long n;
+    size_t header_used = 0, resp_used = 0;
+    static char header[4096];
+    SSL *ssl = NULL;
+
+    if (resp && respsize) resp[0] = '\0';
+    if (!http_available()) return 1;
+    if (parse_url(url, host, sizeof host, &port, path, sizeof path, &tls) != 0) {
+        printf("amipkg: unsupported URL: %s\n", url);
+        return 1;
+    }
+    if (tls && !amissl_available()) return 1;
+    he = gethostbyname(host);
+    if (!he || !he->h_addr_list || !he->h_addr_list[0]) {
+        printf("amipkg: cannot resolve %s\n", host);
+        return 1;
+    }
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) return 1;
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons((unsigned short)port);
+    memcpy(&sa.sin_addr, he->h_addr_list[0], sizeof sa.sin_addr);
+    if (connect(sock, (struct sockaddr *)&sa, sizeof sa) < 0) {
+        printf("amipkg: cannot connect to %s:%ld\n", host, port);
+        CloseSocket(sock);
+        return 1;
+    }
+    if (tls) {
+        ssl = SSL_new(g_ssl_ctx);
+        if (!ssl) { CloseSocket(sock); return 1; }
+        SSL_set_fd(ssl, sock);
+        SSL_set_tlsext_host_name(ssl, host);
+        if (SSL_connect(ssl) <= 0) { SSL_free(ssl); CloseSocket(sock); return 1; }
+    }
+    snprintf(req, sizeof req,
+             "POST %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: amipkg/" AMIPKG_VERSION "\r\n"
+             "Content-Type: application/json\r\nContent-Length: %ld\r\n"
+             "Connection: close\r\n\r\n",
+             path, host, (long)strlen(body));
+    if (net_write(ssl, sock, req, (long)strlen(req)) < 0 ||
+        net_write(ssl, sock, body, (long)strlen(body)) < 0) {
+        printf("amipkg: send failed\n");
+        goto fail;
+    }
+    while ((n = net_read(ssl, sock, buf, sizeof buf)) > 0) {
+        char *b = buf;
+        long blen = n;
+        if (!header_done) {
+            size_t take = (size_t)n;
+            char *sep;
+            if (header_used + take >= sizeof header) take = sizeof header - header_used - 1;
+            memcpy(header + header_used, buf, take);
+            header_used += take;
+            header[header_used] = '\0';
+            sep = strstr(header, "\r\n\r\n");
+            if (!sep) continue;
+            header_done = 1;
+            if (sscanf(header, "HTTP/%*s %d", &status) != 1) status = 0;
+            b = buf + (sep + 4 - header);
+            /* header[] holds ALL bytes read so far; the body starts after
+             * the separator WITHIN this accumulated buffer. */
+            blen = (long)(header_used - (size_t)(sep + 4 - header));
+            memcpy(buf, sep + 4, (size_t)blen);
+            b = buf;
+        }
+        if (resp && blen > 0 && resp_used < respsize - 1) {
+            size_t take = (size_t)blen;
+            if (resp_used + take > respsize - 1) take = respsize - 1 - resp_used;
+            memcpy(resp + resp_used, b, take);
+            resp_used += take;
+            resp[resp_used] = '\0';
+        }
+    }
+    if (ssl) { SSL_shutdown(ssl); SSL_free(ssl); }
+    CloseSocket(sock);
+    return status == 200 ? 0 : 1;
+fail:
+    if (ssl) { SSL_shutdown(ssl); SSL_free(ssl); }
+    CloseSocket(sock);
+    return 1;
+}
+
 int http_get(const char *url, FILE *out, long *bytes_out)
 {
     static char current[512], redirect[512];

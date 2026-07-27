@@ -30,8 +30,8 @@ char *amipkg_data_path(const char *rel);
 
 /* THE version - single source for $VER tags, About boxes, the UA string
  * and the self-seeded receipt. Bump HERE (plus the catalog entry). */
-#define AMIPKG_VERSION "0.5.9"
-#define AMIPKG_VERDATE "27.7.2026"
+#define AMIPKG_VERSION "0.6.0"
+#define AMIPKG_VERDATE "28.7.2026"
 
 #define AMIPKG_DEFAULT_INSTALLDIR "SYS:Programs"
 /* 320: the signed catalog crossed 200 packages (2026-07-27) - 128 silently

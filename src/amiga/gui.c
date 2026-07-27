@@ -78,7 +78,8 @@ enum { GID_VIEW = 1, GID_LIST, GID_CHECK, GID_INFO, GID_INSTALL, GID_REMOVE, GID
 enum { MENU_PROJECT = 0, MENU_PACKAGE = 1 };
 enum { PROJ_ABOUT = 0, PROJ_DOCS = 1, PROJ_QUIT = 3 };  /* item 2 is the bar */
 enum { PKG_UPDATECAT = 0, PKG_CHECK = 1, PKG_UPGRADE = 2, PKG_INFO = 3, PKG_INSTALL = 4,
-       PKG_ADOPT = 5, PKG_REMOVE = 6, PKG_REFRESH = 7, PKG_SETDIR = 9 };   /* item 8 = bar */
+       PKG_ADOPT = 5, PKG_SUBMIT = 6, PKG_REMOVE = 7, PKG_REFRESH = 8,
+       PKG_SETDIR = 10 };   /* item 9 = bar */
 
 /* View modes. */
 enum { VIEW_INSTALLED = 0, VIEW_AVAILABLE = 1 };
@@ -139,6 +140,7 @@ static struct NewMenu g_newmenu[] = {
     { NM_ITEM,  (STRPTR)"Info",          (STRPTR)"I", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Install",       (STRPTR)"N", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Adopt Existing...", NULL,    0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Submit a Package...", NULL,  0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Remove",        (STRPTR)"R", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Refresh",       (STRPTR)"F", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)NM_BARLABEL,     NULL,        0, 0, NULL },
@@ -1272,6 +1274,15 @@ static int dispatch_menu(UWORD menuNum, UWORD itemNum)
         else if (itemNum == PKG_INFO) action_info();
         else if (itemNum == PKG_INSTALL) action_install();
         else if (itemNum == PKG_ADOPT) action_adopt();
+        else if (itemNum == PKG_SUBMIT)
+            req("Submit a Package",
+                "Author a catalog entry ON YOUR AMIGA and send it in\n"
+                "for review - your machine computes the SHA-256 pin:\n\n"
+                "    amipkg submit <id> <archive-url> [description]\n\n"
+                "e.g.  amipkg submit supertool\n"
+                "        http://aminet.net/util/misc/SuperTool.lha\n\n"
+                "A maintainer reviews and signs every submission before\n"
+                "it reaches the catalog. (GUI form planned.)");
         else if (itemNum == PKG_REMOVE) action_remove();
         else if (itemNum == PKG_REFRESH) action_refresh();
         else if (itemNum == PKG_SETDIR) action_set_dir();

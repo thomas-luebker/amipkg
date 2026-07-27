@@ -63,7 +63,7 @@ struct Library *UtilityBase = NULL;   /* MUI notification tags use utility */
 /* ---- IDs ------------------------------------------------------------------ */
 enum {
     ID_UPDATE = 1, ID_CHECK, ID_UPALL, ID_INFO, ID_INSTALL, ID_RUN,
-    ID_REMOVE, ID_REFRESH, ID_SETDIR, ID_ABOUT, ID_ADOPT, ID_DOCS,
+    ID_REMOVE, ID_REFRESH, ID_SETDIR, ID_ABOUT, ID_ADOPT, ID_DOCS, ID_SUBMIT,
     ID_VIEW, ID_CAT, ID_SORT, ID_FIND, ID_SELECT, ID_DCLICK
 };
 
@@ -926,6 +926,8 @@ static int build_app(void)
                     MUIA_UserData, ID_RUN, End,
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Adopt Existing...",
                     MUIA_UserData, ID_ADOPT, End,
+                MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Submit a Package...",
+                    MUIA_UserData, ID_SUBMIT, End,
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Remove",
                     MUIA_Menuitem_Shortcut, (ULONG)"R",
                     MUIA_UserData, ID_REMOVE, End,
@@ -1261,6 +1263,16 @@ static int gui_run(void)
             case ID_REMOVE:  action_remove(); break;
             case ID_SETDIR:  action_set_dir(); break;
             case ID_ADOPT:   action_adopt(); break;
+            case ID_SUBMIT:
+                MUI_Request(app, win, 0, (char *)"Submit a Package", (char *)"_OK",
+                    "Author a catalog entry ON YOUR AMIGA and send it in\n"
+                    "for review - your machine computes the SHA-256 pin:\n\n"
+                    "    amipkg submit <id> <archive-url> [description]\n\n"
+                    "e.g.  amipkg submit supertool\n"
+                    "        http://aminet.net/util/misc/SuperTool.lha\n\n"
+                    "A maintainer reviews and signs every submission before\n"
+                    "it reaches the catalog. (GUI form planned.)");
+                break;
             case ID_ABOUT:   action_about(); break;
             case ID_DOCS:
                 open_docs();
