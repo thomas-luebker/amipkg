@@ -101,7 +101,7 @@ static Object *app, *win, *lv, *lst, *str_find, *cyc_sort;
 static Object *lv_view, *lst_view, *lv_cats, *lst_cats;
 static Object *txt_status, *txt_progress, *txt_desc, *txt_counts;
 static Object *bt_update, *bt_check, *bt_upall, *bt_info, *bt_install,
-              *bt_run, *bt_remove, *bt_refresh;
+              *bt_run, *bt_remove, *bt_adopt, *bt_refresh;
 
 /* ---- async op state (same protocol as gui.c) ------------------------------ */
 
@@ -385,6 +385,7 @@ static void update_action_state(void)
     set(bt_install, MUIA_Disabled, (!busy && r && g_view == VIEW_AVAILABLE) ? FALSE : TRUE);
     set(bt_remove,  MUIA_Disabled, (!busy && inst) ? FALSE : TRUE);
     set(bt_run,     MUIA_Disabled, (!busy && inst) ? FALSE : TRUE);
+    set(bt_adopt,   MUIA_Disabled, (!busy && r) ? FALSE : TRUE);
     set(bt_update,  MUIA_Disabled, busy ? TRUE : FALSE);
     set(bt_upall,   MUIA_Disabled, busy ? TRUE : FALSE);
     set(bt_refresh, MUIA_Disabled, busy ? TRUE : FALSE);
@@ -873,6 +874,7 @@ static int build_app(void)
                     Child, bt_remove  = SimpleButton("Re_move"),
                     Child, bt_info    = SimpleButton("_Info"),
                     Child, bt_run     = SimpleButton("_Run"),
+                    Child, bt_adopt   = SimpleButton("Ado_pt..."),
                     Child, MUI_MakeObject(MUIO_VBar, 4),
                     Child, bt_refresh = SimpleButton("Re_fresh"),
                 End,
@@ -1005,6 +1007,8 @@ static int build_app(void)
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_RUN);
     DoMethod(bt_remove,  MUIM_Notify, MUIA_Pressed, FALSE,
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_REMOVE);
+    DoMethod(bt_adopt,   MUIM_Notify, MUIA_Pressed, FALSE,
+             (ULONG)app, 2, MUIM_Application_ReturnID, ID_ADOPT);
     trace("build_app: notifications wired");
     return 1;
 }

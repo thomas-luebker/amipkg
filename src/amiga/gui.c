@@ -72,7 +72,7 @@ static void init_list(struct List *l)
 /* Gadget IDs */
 enum { GID_VIEW = 1, GID_LIST, GID_CHECK, GID_INFO, GID_INSTALL, GID_REMOVE, GID_REFRESH,
        GID_STATUS, GID_SEARCH, GID_UPGRADE, GID_PROGRESS, GID_UPDATE, GID_RUN,
-       GID_CAT, GID_SORT };
+       GID_CAT, GID_SORT, GID_ADOPT };
 
 /* Menu numbering (must match g_newmenu below). */
 enum { MENU_PROJECT = 0, MENU_PACKAGE = 1 };
@@ -96,7 +96,7 @@ static size_t      g_nrows = 0;
 static int         g_selected = -1;
 
 static struct Gadget *g_glist = NULL;
-static struct Gadget *g_gads[GID_SORT + 1];
+static struct Gadget *g_gads[GID_ADOPT + 1];
 static char           g_filter[64] = "";   /* Find box: case-insensitive id/name substring */
 static char           g_progressbuf[160] = "";   /* last line of the running op's output */
 
@@ -408,6 +408,9 @@ static void update_action_state(void)
     if (g_gads[GID_RUN])
         GT_SetGadgetAttrs(g_gads[GID_RUN], g_win, NULL,
                           GA_Disabled, (!busy && inst) ? FALSE : TRUE, TAG_END);
+    if (g_gads[GID_ADOPT])
+        GT_SetGadgetAttrs(g_gads[GID_ADOPT], g_win, NULL,
+                          GA_Disabled, (!busy && sel) ? FALSE : TRUE, TAG_END);
     if (g_gads[GID_UPDATE])
         GT_SetGadgetAttrs(g_gads[GID_UPDATE], g_win, NULL, GA_Disabled, busy ? TRUE : FALSE, TAG_END);
     if (g_gads[GID_UPGRADE])
@@ -959,7 +962,7 @@ static void action_refresh_after_op(void)
 #define UI_GAP    6
 #define UI_LV_W   332
 #define UI_BTN_W  132
-#define UI_ROWS   17   /* tall enough for the 8-button column + more packages */
+#define UI_ROWS   19   /* tall enough for the 9-button column + more packages */
 
 static struct Gadget *build_gadgets(void)
 {
@@ -1064,10 +1067,11 @@ static struct Gadget *build_gadgets(void)
             {(UBYTE *)"Install",       GID_INSTALL, 1},
             {(UBYTE *)"Run",           GID_RUN,     1},
             {(UBYTE *)"Remove",        GID_REMOVE,  1},
+            {(UBYTE *)"Adopt...",      GID_ADOPT,   1},
             {(UBYTE *)"Refresh",       GID_REFRESH, 0},
         };
         int i;
-        for (i = 0; i < 8; i++) {
+        for (i = 0; i < 9; i++) {
             memset(&ng, 0, sizeof ng);
             ng.ng_LeftEdge = bx; ng.ng_TopEdge = by;
             ng.ng_Width = UI_BTN_W; ng.ng_Height = btnH;
@@ -1233,6 +1237,7 @@ static void event_loop(void)
                 case GID_CAT:  g_cat_sel = (int)code;     action_refresh(); break;
                 case GID_SORT: g_sort_recent = (int)code; action_refresh(); break;
                 case GID_RUN:  action_run(); break;
+                case GID_ADOPT: action_adopt(); break;
                 case GID_LIST: {
                     static ULONG lastSec = 0, lastMic = 0;
                     static int lastRow = -1;
