@@ -183,7 +183,15 @@ static void selfseed_receipt(void)
     long have = -1;
     for (i = 0; i < n; i++)
         if (strcmp(inst[i].id, "amipkg") == 0) { have = (long)i; break; }
-    if (have >= 0 && !aver_is_newer(AMIPKG_VERSION, inst[have].version))
+    /* Sync BOTH ways: the receipt must describe the amipkg the user RUNS.
+     * Before 0.5.6 it only bumped upward - an upgrade whose new binaries
+     * didn't reach the launch location left the receipt claiming the new
+     * version, so every further check said "up to date" while the user
+     * kept running the old one (A4000 report). If the receipt and this
+     * binary disagree IN EITHER DIRECTION, rewrite it to this binary's
+     * version - check/upgrade then re-offer the update and the self-update
+     * mirror gets another chance to converge. */
+    if (have >= 0 && strcmp(inst[have].version, AMIPKG_VERSION) == 0)
         return;
     if (have < 0) {
         FILE *f = fopen(amipkg_data_path("db/installed.txt"), "a");
@@ -202,7 +210,7 @@ static void selfseed_receipt(void)
             fclose(f);
         }
     } else {
-        /* Binary is newer than the record (manual update): bump the line. */
+        /* Receipt disagrees with this binary (either direction): rewrite. */
         FILE *f = fopen(amipkg_data_path("db/installed.txt"), "wb");
         char line[192];
         if (!f) return;

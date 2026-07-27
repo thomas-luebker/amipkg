@@ -279,6 +279,13 @@ static void tail_line(const char *path, char *out, size_t outsize)
  * runs the command with output to ASYNC_OUT, then writes its return code to
  * ASYNC_DONE. INTUITICKS (poll_async) stream the output tail into the progress
  * line and detect completion. Buttons stay disabled while g_busy. */
+/* Two chained CLI commands in ONE async script (e.g. "update" then
+ * "upgrade" - Update All must never act on a stale catalog). Output of both
+ * lands in ASYNC_OUT; the recorded rc is the SECOND command's. FailAt 30
+ * lets the chain continue past a failed update (rc 10) - the second command
+ * then behaves exactly like the old single-command path. */
+static int run_async2(const char *cmd1, const char *cmd2, const char *verb);
+
 static int run_async(const char *cmd, const char *verb)
 {
     BPTR fh, in, out;
@@ -288,6 +295,40 @@ static int run_async(const char *cmd, const char *verb)
     DeleteFile((STRPTR)ASYNC_DONE);
     snprintf(script, sizeof script,
              "FailAt 30\n%s >" ASYNC_OUT "\nEcho $RC >" ASYNC_DONE "\n", cmd);
+    fh = Open((STRPTR)ASYNC_SCRIPT, MODE_NEWFILE);
+    if (!fh) { set_status("Could not write the RAM: work script."); return 0; }
+    Write(fh, script, (LONG)strlen(script));
+    Close(fh);
+    in  = Open((STRPTR)"NIL:", MODE_OLDFILE);
+    out = Open((STRPTR)"NIL:", MODE_NEWFILE);
+    if (SystemTags((STRPTR)"Execute " ASYNC_SCRIPT,
+                   SYS_Asynch, TRUE, SYS_Input, in, SYS_Output, out,
+                   TAG_END) == -1) {
+        if (in) Close(in);
+        if (out) Close(out);
+        set_status("Could not launch the amipkg CLI.");
+        return 0;
+    }
+    /* On success the system owns + closes the handles. */
+    strncpy(g_busy_verb, verb, sizeof g_busy_verb - 1);
+    g_busy_verb[sizeof g_busy_verb - 1] = '\0';
+    g_busy = 1;
+    g_busy_ticks = 0;
+    set_progress("Working...");
+    update_action_state();
+    return 1;
+}
+
+static int run_async2(const char *cmd1, const char *cmd2, const char *verb)
+{
+    BPTR fh, in, out;
+    static char script[1024];
+    if (g_busy) { set_status("An operation is already running."); return 0; }
+    DeleteFile((STRPTR)ASYNC_OUT);
+    DeleteFile((STRPTR)ASYNC_DONE);
+    snprintf(script, sizeof script,
+             "FailAt 30\n%s >" ASYNC_OUT "\n%s >>" ASYNC_OUT "\nEcho $RC >" ASYNC_DONE "\n",
+             cmd1, cmd2);
     fh = Open((STRPTR)ASYNC_SCRIPT, MODE_NEWFILE);
     if (!fh) { set_status("Could not write the RAM: work script."); return 0; }
     Write(fh, script, (LONG)strlen(script));
@@ -647,9 +688,15 @@ static void action_upgrade(void)
         set_status("Update cancelled."); return;
     }
     set_status("Updating all packages...");
-    char cmd[64];
-    snprintf(cmd, sizeof cmd, "%s upgrade", cli_path());
-    run_async(cmd, "Update All");
+    {
+        /* Refresh the catalog FIRST - "Update All" must never act on a
+         * stale index (A4000 report: upgrade said up-to-date against an
+         * old local catalog). */
+        char c1[340], c2[340];
+        snprintf(c1, sizeof c1, "%s update", cli_path());
+        snprintf(c2, sizeof c2, "%s upgrade", cli_path());
+        run_async2(c1, c2, "Update All");
+    }
 }
 
 static void action_info(void)
