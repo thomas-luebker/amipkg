@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #define AMIPKG_MARK_VER "amipkg"
 
@@ -484,6 +485,50 @@ size_t amipkg_run_recipe(const arecipe *recipe, const char *extract_dir,
     return written;
 }
 
+/* Does the extract tree consist of ONE top-level drawer (all entries share a
+ * single first path component that is a directory)? Then the archive brings
+ * its own app drawer and may land in the install dir as-is. Anything else
+ * (flat archives, multiple roots, a lone file) must be wrapped in a <id>/
+ * drawer by the caller - loose files must never pile up in the install dir
+ * root (tester report: amipkg-client + Amelinium spilled their files there). */
+/* One shared walk buffer (BSS budget: 1 MB machines) - the callers below
+ * never overlap, each does its own fresh walk. */
+static char g_walk_pool[ARUN_MAX_OPS][256];
+static int  g_walk_isdir[ARUN_MAX_OPS];
+
+int amipkg_extract_single_top_dir(const char *extract_dir)
+{
+    char (*pool)[256] = g_walk_pool;
+    int *is_dir = g_walk_isdir;
+    size_t n, i;
+    char first[256];
+    int have = 0, seen_dir = 0;
+    n = walk_tree(extract_dir, "", pool, is_dir, ARUN_MAX_OPS, 0);
+    if (n == 0) return 0;
+    first[0] = '\0';
+    for (i = 0; i < n; i++) {
+        const char *sl = strchr(pool[i], '/');
+        size_t len = sl ? (size_t)(sl - pool[i]) : strlen(pool[i]);
+        char comp[256];
+        size_t k;
+        if (len >= sizeof comp) len = sizeof comp - 1;
+        memcpy(comp, pool[i], len); comp[len] = '\0';
+        if (!have) { strcpy(first, comp); have = 1; }
+        else {
+            /* Amiga filesystems are case-insensitive - compare accordingly. */
+            for (k = 0; ; k++) {
+                int a = tolower((unsigned char)first[k]);
+                int b = tolower((unsigned char)comp[k]);
+                if (a != b) return 0;
+                if (!a) break;
+            }
+        }
+        if (sl) seen_dir = 1;                 /* something lives under the top */
+        else if (is_dir[i]) seen_dir = 1;     /* the top entry itself is a dir */
+    }
+    return seen_dir;
+}
+
 /* Generic install for a recipe-less package (the fetch-only Aminet entries):
  * copy the whole extracted tree under `dest_root` (typically SYS:Programs), so
  * an archive that unpacked into e.g. "Fitz/" lands as SYS:Programs/Fitz/. This
@@ -493,8 +538,8 @@ size_t amipkg_run_recipe(const arecipe *recipe, const char *extract_dir,
 size_t amipkg_install_generic(const char *extract_dir, const char *dest_root,
                               char (*out_paths)[256], size_t max)
 {
-    static char pool[ARUN_MAX_OPS][256];
-    static int is_dir[ARUN_MAX_OPS];
+    char (*pool)[256] = g_walk_pool;
+    int *is_dir = g_walk_isdir;
     size_t n, i, out = 0;
     n = walk_tree(extract_dir, "", pool, is_dir, ARUN_MAX_OPS, 0);
     for (i = 0; i < n; i++) {

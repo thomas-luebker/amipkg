@@ -1,12 +1,12 @@
 @database amipkg.guide
-@$VER: amipkg.guide 0.5.1 (27.7.2026)
+@$VER: amipkg.guide 0.5.2 (27.7.2026)
 @author "Thomas Luebker"
 @node MAIN "amipkg - the AmigaPKG package manager"
 
 @{b}amipkg - the package manager for AmigaOS 3.x@{ub}
 
 Install, update and remove software from a curated, cryptographically
-signed catalog of 100+ packages - straight on your Amiga.
+signed catalog of 200+ packages - straight on your Amiga.
 
   @{" What is amipkg?        " link ABOUT}
   @{" Requirements           " link REQ}
@@ -28,7 +28,7 @@ Catalog + package submissions:
 
 Think "apt or Homebrew for your A500/A1200/A4000":
 
- - A curated catalog of 100+ freely distributable classics and tools
+ - A curated catalog of 200+ freely distributable classics and tools
    (players, commodities, internet apps, dev tools, games).
  - @{b}Dependency resolution@{ub}: installing an app also installs what it
    needs (MUI, class libraries, ...), picking the right CPU build for
