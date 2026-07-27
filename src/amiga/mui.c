@@ -97,8 +97,9 @@ static char g_filter[64] = "";
 
 /* ---- MUI objects ---------------------------------------------------------- */
 
-static Object *app, *win, *lv, *lst, *str_find, *cyc_view, *cyc_cat, *cyc_sort;
-static Object *txt_status, *txt_progress, *txt_desc;
+static Object *app, *win, *lv, *lst, *str_find, *cyc_sort;
+static Object *lv_view, *lst_view, *lv_cats, *lst_cats;
+static Object *txt_status, *txt_progress, *txt_desc, *txt_counts;
 static Object *bt_update, *bt_check, *bt_upall, *bt_info, *bt_install,
               *bt_run, *bt_remove, *bt_refresh;
 
@@ -270,6 +271,7 @@ static void rebuild_list(void)
 {
     static rcpt_installed inst[MAX_PKGS];
     size_t ninst, i;
+    size_t cat_total = 0;
 
     set(lst, MUIA_List_Quiet, TRUE);
     DoMethod(lst, MUIM_List_Clear);
@@ -282,6 +284,7 @@ static void rebuild_list(void)
         aidx_index vidx;
         char *vtext = read_file(amipkg_data_path("packages.json"));
         int have_vidx = (vtext && aidx_parse(vtext, &vidx) == 0);
+        if (have_vidx) cat_total = vidx.count;
         for (i = 0; i < ninst && g_nrows < MAX_PKGS; i++) {
             Row *r = &g_rows[g_nrows];
             const char *v;
@@ -308,6 +311,7 @@ static void rebuild_list(void)
         if (text && aidx_parse(text, &idx) == 0) {
             static const aidx_entry *order[MAX_PKGS * 2];
             size_t norder = 0;
+            cat_total = idx.count;
             const char *want_cat = g_cat_sel > 0 && (size_t)(g_cat_sel - 1) < g_ncats
                                    ? g_catnames[g_cat_sel - 1] : NULL;
             g_ncats = 0;
@@ -342,10 +346,15 @@ static void rebuild_list(void)
     set(lst, MUIA_List_Quiet, FALSE);
     {
         char b[64];
+        static char c[80];   /* MUI keeps the pointer - must stay alive */
         snprintf(b, sizeof b, "%lu package%s %s", (unsigned long)g_nrows,
                  g_nrows == 1 ? "" : "s",
                  g_view == VIEW_AVAILABLE ? "available" : "installed");
         set_status(b);
+        snprintf(c, sizeof c, " Catalog: %lu | Installed: %lu | Shown: %lu",
+                 (unsigned long)cat_total, (unsigned long)ninst,
+                 (unsigned long)g_nrows);
+        set(txt_counts, MUIA_Text_Contents, (ULONG)c);
     }
     set_desc("");
 }
@@ -825,74 +834,104 @@ static int build_app(void)
 #endif
 
         SubWindow, win = WindowObject,
-            MUIA_Window_Title, (ULONG)"amipkg - AmigaPKG Package Manager",
+            MUIA_Window_Title, (ULONG)"amipkg " AMIPKG_VERSION " - AmigaPKG Package Manager",
             MUIA_Window_ID,    MAKE_ID('A','P','K','G'),
             WindowContents, VGroup,
 
-                /* filter row */
-                Child, HGroup,
-                    Child, Label2("Find"),
-                    Child, str_find = StringObject, StringFrame,
-                        MUIA_String_MaxLen, 63,
-                        MUIA_CycleChain, 1,
-                    End,
-                    Child, cyc_view = CycleObject,
-                        MUIA_Cycle_Entries, (ULONG)g_viewlabels,
-                        MUIA_Cycle_Active,  g_view,
-                        MUIA_CycleChain, 1,
-                    End,
-                    Child, cyc_cat = CycleObject,
-                        MUIA_Cycle_Entries, (ULONG)g_catlabels,
-                        MUIA_CycleChain, 1,
-                    End,
-                    Child, cyc_sort = CycleObject,
-                        MUIA_Cycle_Entries, (ULONG)g_sortlabels,
-                        MUIA_CycleChain, 1,
-                    End,
-                End,
-
-                /* package list */
-                Child, lv = ListviewObject,
-                    /* WEIGHTs only - MIW/MAW are PERCENT clamps, and
-                     * "MAW=2" made column 0's minimum exceed its maximum
-                     * on big-font RTG Workbenches: MUI then REFUSES to
-                     * open the window (tester trace; UAE's topaz-8 just
-                     * squeaked by, which is why it worked there). */
-                    MUIA_Listview_List, lst = ListObject, InputListFrame,
-                        MUIA_List_Format,      (ULONG)"WEIGHT=1,WEIGHT=100,WEIGHT=25,WEIGHT=30",
-                        MUIA_List_Title,       TRUE,
-                        MUIA_List_DisplayHook, (ULONG)&disp_hook,
-                    End,
-                End,
-
-                /* description pane */
-                Child, txt_desc = TextObject, TextFrame,
-                    MUIA_Text_Contents, (ULONG)"",
-                    MUIA_Background, MUII_TextBack,
-                End,
-
-                /* buttons */
+                /* toolbar: catalog ops | package ops | refresh */
                 Child, HGroup,
                     Child, bt_update  = SimpleButton("Update _Catalog"),
                     Child, bt_check   = SimpleButton("Chec_k Updates"),
                     Child, bt_upall   = SimpleButton("Update _All"),
+                    Child, MUI_MakeObject(MUIO_VBar, 4),
+                    Child, bt_install = SimpleButton("I_nstall"),
+                    Child, bt_remove  = SimpleButton("Re_move"),
+                    Child, bt_info    = SimpleButton("_Info"),
+                    Child, bt_run     = SimpleButton("_Run"),
+                    Child, MUI_MakeObject(MUIO_VBar, 4),
                     Child, bt_refresh = SimpleButton("Re_fresh"),
                 End,
+
+                /* sidebar (view + categories) | main pane */
                 Child, HGroup,
-                    Child, bt_info    = SimpleButton("_Info"),
-                    Child, bt_install = SimpleButton("I_nstall"),
-                    Child, bt_run     = SimpleButton("_Run"),
-                    Child, bt_remove  = SimpleButton("Re_move"),
+
+                    Child, VGroup, MUIA_HorizWeight, 0,
+                        Child, VGroup, GroupFrameT("View"), MUIA_VertWeight, 0,
+                            Child, lv_view = ListviewObject,
+                                MUIA_CycleChain, 1,
+                                MUIA_Listview_List, lst_view = ListObject, InputListFrame,
+                                    MUIA_List_SourceArray, (ULONG)g_viewlabels,
+                                    MUIA_List_AdjustWidth,  TRUE,
+                                    MUIA_List_AdjustHeight, TRUE,
+                                End,
+                            End,
+                        End,
+                        Child, VGroup, GroupFrameT("Categories"),
+                            Child, lv_cats = ListviewObject,
+                                MUIA_CycleChain, 1,
+                                MUIA_Listview_List, lst_cats = ListObject, InputListFrame,
+                                    MUIA_List_SourceArray, (ULONG)g_catlabels,
+                                    MUIA_List_AdjustWidth, TRUE,
+                                End,
+                            End,
+                        End,
+                    End,
+
+                    Child, BalanceObject, End,
+
+                    Child, VGroup,
+                        /* search / sort row */
+                        Child, HGroup,
+                            Child, Label2("Find"),
+                            Child, str_find = StringObject, StringFrame,
+                                MUIA_String_MaxLen, 63,
+                                MUIA_CycleChain, 1,
+                            End,
+                            Child, Label2("Sort"),
+                            Child, cyc_sort = CycleObject, MUIA_HorizWeight, 0,
+                                MUIA_Cycle_Entries, (ULONG)g_sortlabels,
+                                MUIA_CycleChain, 1,
+                            End,
+                        End,
+
+                        /* package list */
+                        Child, lv = ListviewObject,
+                            /* WEIGHTs only - MIW/MAW are PERCENT clamps, and
+                             * "MAW=2" made column 0's minimum exceed its maximum
+                             * on big-font RTG Workbenches: MUI then REFUSES to
+                             * open the window (tester trace; UAE's topaz-8 just
+                             * squeaked by, which is why it worked there). */
+                            MUIA_Listview_List, lst = ListObject, InputListFrame,
+                                MUIA_List_Format,      (ULONG)"WEIGHT=1,WEIGHT=100,WEIGHT=25,WEIGHT=30",
+                                MUIA_List_Title,       TRUE,
+                                MUIA_List_DisplayHook, (ULONG)&disp_hook,
+                            End,
+                        End,
+
+                        /* description pane */
+                        Child, VGroup, GroupFrameT("Description"), MUIA_VertWeight, 0,
+                            Child, txt_desc = TextObject, TextFrame,
+                                MUIA_Text_Contents, (ULONG)"",
+                                MUIA_Background, MUII_TextBack,
+                            End,
+                        End,
+                    End,
                 End,
 
-                /* status + progress */
-                Child, txt_status = TextObject, TextFrame,
-                    MUIA_Text_Contents, (ULONG)"Welcome to amipkg.",
-                    MUIA_Background, MUII_TextBack,
-                End,
-                Child, txt_progress = TextObject, TextFrame,
-                    MUIA_Text_Contents, (ULONG)"",
-                    MUIA_Background, MUII_TextBack,
+                /* status bar: counts | status | progress */
+                Child, HGroup,
+                    Child, txt_counts = TextObject, TextFrame, MUIA_HorizWeight, 25,
+                        MUIA_Text_Contents, (ULONG)"",
+                        MUIA_Background, MUII_TextBack,
+                    End,
+                    Child, txt_status = TextObject, TextFrame, MUIA_HorizWeight, 45,
+                        MUIA_Text_Contents, (ULONG)"Welcome to amipkg.",
+                        MUIA_Background, MUII_TextBack,
+                    End,
+                    Child, txt_progress = TextObject, TextFrame, MUIA_HorizWeight, 30,
+                        MUIA_Text_Contents, (ULONG)"",
+                        MUIA_Background, MUII_TextBack,
+                    End,
                 End,
             End,
         End,
@@ -900,14 +939,19 @@ static int build_app(void)
     if (!app) return 0;
     trace("build_app: application tree created, wiring notifications");
 
+    /* initial sidebar selection BEFORE the notifications are wired, so the
+     * setup does not queue spurious ReturnIDs */
+    set(lst_view, MUIA_List_Active, g_view);
+    set(lst_cats, MUIA_List_Active, 0);
+
     /* notifications -> ReturnIDs */
     DoMethod(app, MUIM_Notify, MUIA_Application_MenuAction, MUIV_EveryTime,
              (ULONG)app, 2, MUIM_Application_ReturnID, MUIV_TriggerValue);
     DoMethod(win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE,
              (ULONG)app, 2, MUIM_Application_ReturnID, MUIV_Application_ReturnID_Quit);
-    DoMethod(cyc_view, MUIM_Notify, MUIA_Cycle_Active, MUIV_EveryTime,
+    DoMethod(lst_view, MUIM_Notify, MUIA_List_Active, MUIV_EveryTime,
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_VIEW);
-    DoMethod(cyc_cat, MUIM_Notify, MUIA_Cycle_Active, MUIV_EveryTime,
+    DoMethod(lst_cats, MUIM_Notify, MUIA_List_Active, MUIV_EveryTime,
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_CAT);
     DoMethod(cyc_sort, MUIM_Notify, MUIA_Cycle_Active, MUIV_EveryTime,
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_SORT);
@@ -1074,11 +1118,13 @@ static int gui_run(void)
             switch (rid) {
             case MUIV_Application_ReturnID_Quit: done = 1; break;
             case ID_VIEW: {
-                ULONG v = 0; get(cyc_view, MUIA_Cycle_Active, &v);
-                g_view = (int)v; rebuild_list(); update_action_state(); break; }
+                LONG v = 0; get(lst_view, MUIA_List_Active, &v);
+                if (v >= 0) { g_view = (int)v; rebuild_list(); update_action_state(); }
+                break; }
             case ID_CAT: {
-                ULONG v = 0; get(cyc_cat, MUIA_Cycle_Active, &v);
-                g_cat_sel = (int)v; rebuild_list(); update_action_state(); break; }
+                LONG v = 0; get(lst_cats, MUIA_List_Active, &v);
+                if (v >= 0) { g_cat_sel = (int)v; rebuild_list(); update_action_state(); }
+                break; }
             case ID_SORT: {
                 ULONG v = 0; get(cyc_sort, MUIA_Cycle_Active, &v);
                 g_sort_recent = (int)v; rebuild_list(); update_action_state(); break; }

@@ -1,5 +1,5 @@
 @database amipkg.guide
-@$VER: amipkg.guide 0.4.10 (26.7.2026)
+@$VER: amipkg.guide 0.5.0 (27.7.2026)
 @author "Thomas Luebker"
 @node MAIN "amipkg - the AmigaPKG package manager"
 
@@ -92,8 +92,9 @@ the SHA-256 recorded in the signed catalog or it is refused.
 @{b}Two front-ends - pick your flavour@{ub}
 
 @{b}amipkg-mui@{ub} (needs MUI 3.8+)
-  The polished one: resizable window, real list columns, description
-  pane. Everything the CLI can do, point-and-click.
+  The polished one: toolbar, sidebar with View and Categories panes,
+  real list columns, description pane and a status bar with catalog
+  counters. Everything the CLI can do, point-and-click.
 
 @{b}amipkg-gui@{ub} (GadTools)
   Runs on ANY stock 3.x system with zero dependencies.
