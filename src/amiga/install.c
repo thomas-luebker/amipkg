@@ -98,6 +98,13 @@ static int copy_file(const char *src, const char *dst)
     return 1;
 }
 
+/* Forward declarations - shared walk buffer + helpers defined further down
+ * (tentative array declarations merge with the commented definitions). */
+static char g_walk_pool[ARUN_MAX_OPS][256];
+static int  g_walk_isdir[ARUN_MAX_OPS];
+static const char *selfupdate_basename(const char *path);
+static int ci_eq(const char *a, const char *b);
+
 /* SetProtection: give a path the script (s) bit, clearing (e) is not needed -
  * matches copyFromHost's "0x40 script bit for exec files" for a script. The
  * plan's SET_EXEC scope maps to a subtree; we set the s-bit on plain files
@@ -279,10 +286,39 @@ const char *amipkg_cpu(void)
 /* `amipkg adopt`: inventory an EXISTING drawer into files/<id>.files (path +
  * SHA-256 per file, like a normal install's receipt) so remove/doctor/upgrade
  * manage an app the user already had. Returns the file count. */
+/* Is this drawer-relative path part of amipkg's OWN runtime state? Adopting
+ * amipkg at its home drawer must NEVER inventory cache/db/config/catalog/
+ * trace files: the upgrade's remove-previous step would otherwise delete the
+ * receipt DB, the freshly extracted files in cache/extract, and the catalog
+ * itself mid-upgrade (A4000 incident: "Removed amipkg: 57 file(s)" followed
+ * by "nothing installed"). */
+static int is_amipkg_runtime_rel(const char *rel)
+{
+    static const char *dirs[] = { "cache", "db", "config", NULL };
+    size_t k, len;
+    const char *base = selfupdate_basename(rel);
+    for (k = 0; dirs[k]; k++) {
+        len = strlen(dirs[k]);
+        if (strlen(rel) >= len) {
+            size_t x; int eq = 1;
+            for (x = 0; x < len; x++) {
+                int ca = tolower((unsigned char)rel[x]);
+                int cb = tolower((unsigned char)dirs[k][x]);
+                if (ca != cb) { eq = 0; break; }
+            }
+            if (eq && (rel[len] == '\0' || rel[len] == '/')) return 1;
+        }
+    }
+    len = strlen(base);
+    if (len > 6 && ci_eq(base + len - 6, ".trace")) return 1;
+    if (ci_eq(base, "packages.json") || ci_eq(base, "packages.json.sig")) return 1;
+    return 0;
+}
+
 long amipkg_adopt_inventory(const char *id, const char *drawer)
 {
-    static char pool[ARUN_MAX_OPS][256];
-    static int is_dir[ARUN_MAX_OPS];
+    char (*pool)[256] = g_walk_pool;
+    int *is_dir = g_walk_isdir;
     size_t n, i;
     long files = 0;
     char rp[192];
@@ -295,6 +331,7 @@ long amipkg_adopt_inventory(const char *id, const char *drawer)
         char full[512], hex[65];
         const char *sep = drawer[strlen(drawer) - 1] == ':' ? "" : "/";
         if (is_dir[i]) continue;
+        if (ci_eq(id, "amipkg") && is_amipkg_runtime_rel(pool[i])) continue;
         snprintf(full, sizeof full, "%s%s%s", drawer, sep, pool[i]);
         if (sha256_of_file(full, hex) == 0) fprintf(f, "%s|%s\n", full, hex);
         else                                fprintf(f, "%s\n", full);
@@ -588,6 +625,19 @@ void amipkg_selfupdate_mirror(char (*paths)[256], size_t n)
  * never overlap, each does its own fresh walk. */
 static char g_walk_pool[ARUN_MAX_OPS][256];
 static int  g_walk_isdir[ARUN_MAX_OPS];
+
+/* Does the extract dir contain at least one file? cmd_install checks this
+ * BEFORE removing the previous version - never destroy an install on the
+ * strength of an empty extraction. */
+int amipkg_extract_nonempty(const char *extract_dir)
+{
+    char (*pool)[256] = g_walk_pool;
+    int *is_dir = g_walk_isdir;
+    size_t n, i;
+    n = walk_tree(extract_dir, "", pool, is_dir, ARUN_MAX_OPS, 0);
+    for (i = 0; i < n; i++) if (!is_dir[i]) return 1;
+    return 0;
+}
 
 int amipkg_extract_single_top_dir(const char *extract_dir)
 {

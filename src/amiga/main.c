@@ -54,6 +54,7 @@ size_t amipkg_run_recipe(const arecipe *recipe, const char *extract_dir,
 size_t amipkg_install_generic(const char *extract_dir, const char *dest_root,
                               char (*out_paths)[256], size_t max);
 int amipkg_extract_single_top_dir(const char *extract_dir);
+int amipkg_extract_nonempty(const char *extract_dir);
 void amipkg_selfupdate_mirror(char (*paths)[256], size_t n);
 void amipkg_ensure_dirs(void);
 long long amipkg_volume_free(const char *path);   /* -1 = unknown (don't block) */
@@ -122,6 +123,7 @@ static size_t amipkg_run_recipe(const arecipe *rc, const char *e, const char *b,
 static size_t amipkg_install_generic(const char *e, const char *d, char (*o)[256], size_t m)
 { (void)e; (void)d; (void)o; (void)m; return 0; }
 static int amipkg_extract_single_top_dir(const char *e) { (void)e; return 1; }
+static int amipkg_extract_nonempty(const char *e) { (void)e; return 1; }
 static void amipkg_selfupdate_mirror(char (*p)[256], size_t n) { (void)p; (void)n; }
 static void amipkg_ensure_dirs(void) {}
 static long long amipkg_volume_free(const char *p) { (void)p; return -1; }
@@ -612,7 +614,12 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
     }
     /* Upgrade path: the new version is now downloaded + extracted, so it's safe
      * to remove the previously-installed version (files + receipt) first. Doing
-     * it AFTER extraction means a failed download never destroys the install. */
+     * it AFTER extraction means a failed download never destroys the install.
+     * And never on the strength of an EMPTY extraction (A4000 incident). */
+    if (!amipkg_extract_nonempty(amipkg_data_path("cache/extract"))) {
+        printf("amipkg: extraction produced no files - aborting, nothing was removed.\n");
+        if (tree) ajson_free(tree); return 10;
+    }
     if (pkg_installed(e->id)) {
         printf("Upgrading %s - removing the previous version...\n", e->id);
         cmd_remove(e->id, 1 /*force: an upgrade replaces its own files*/);
@@ -910,10 +917,35 @@ static int cmd_remove(const char *id, int force)
         }
     }
 
-    /* Second pass: delete. */
-    for (i = 0; i < nfiles; i++) {
-        if (files[i].path[0] == '\0') continue;
-        if (remove(receipt_path(files[i].path)) == 0) deleted++;
+    /* Second pass: delete. amipkg's OWN runtime state (cache/db/config under
+     * the prefix) is NEVER deleted through a receipt - a bad inventory (e.g.
+     * an old adopt of the home drawer) must not take out the receipt DB, the
+     * catalog, or an in-flight extraction. */
+    {
+        static const char *rt[] = { "cache", "db", "config", NULL };
+        int kept_runtime = 0;
+        for (i = 0; i < nfiles; i++) {
+            int is_rt = 0;
+            size_t k;
+            if (files[i].path[0] == '\0') continue;
+            for (k = 0; rt[k] && !is_rt; k++) {
+                const char *root = amipkg_data_path(rt[k]);
+                size_t rl = strlen(root), x;
+                int eq = strlen(files[i].path) >= rl;
+                for (x = 0; eq && x < rl; x++) {
+                    char ca = files[i].path[x], cb = root[x];
+                    if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + 32);
+                    if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + 32);
+                    if (ca != cb) eq = 0;
+                }
+                if (eq && (files[i].path[rl] == '\0' || files[i].path[rl] == '/')) is_rt = 1;
+            }
+            if (is_rt) { kept_runtime++; continue; }
+            if (remove(receipt_path(files[i].path)) == 0) deleted++;
+        }
+        if (kept_runtime)
+            printf("Kept %d amipkg runtime file(s) (cache/db/config are never receipt-deleted).\n",
+                   kept_runtime);
     }
 
     /* Rewrite installed.txt without this id. */
