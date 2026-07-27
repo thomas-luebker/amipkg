@@ -19,6 +19,10 @@ LDFLAGS = -s -lgcc
 CORE = src/core/sha256.c src/core/aver.c src/core/receipts.c \
        src/core/ajson.c src/core/aindex.c src/core/resolve.c src/core/arecipe.c src/core/arun.c \
        src/core/store.c
+# Every binary embeds AMIPKG_VERSION etc. from the headers — a bump that only
+# touches store.h MUST relink everything (the 0.5.4 release shipped a 0.5.3
+# CLI because this dependency was missing).
+HDRS = $(wildcard src/core/*.h) $(wildcard src/amiga/*.h)
 # CLI-only: on-device Ed25519 verify (averify.c) over vendored TweetNaCl.
 CRYPTO = src/core/averify.c
 AMIGA = src/amiga/http.c src/amiga/install.c src/amiga/main.c src/core/adfread.c
@@ -31,17 +35,17 @@ all: amipkg amipkg-gui amipkg-mui
 tweetnacl.o: src/core/tweetnacl.c
 	$(CC) $(CFLAGS) -w -c $< -o $@
 
-amipkg: $(CORE) $(CRYPTO) $(AMIGA) tweetnacl.o
+amipkg: $(CORE) $(CRYPTO) $(AMIGA) tweetnacl.o $(HDRS)
 	$(CC) $(CFLAGS) -o $@ $(CORE) $(CRYPTO) $(AMIGA) tweetnacl.o $(LDFLAGS)
 
 # The GadTools GUI shares the portable core but shells out to `C:amipkg` for the
 # net/crypto actions, so it links neither http nor TweetNaCl.
-amipkg-gui: $(CORE) $(GUI)
+amipkg-gui: $(CORE) $(GUI) $(HDRS)
 	$(CC) $(CFLAGS) -o $@ $(CORE) $(GUI) $(LDFLAGS)
 
 # The MUI front-end: vendored MUI 3.8 dev-kit headers; -lamiga for
 # DoMethod/HookEntry (amiga.lib).
-amipkg-mui: $(CORE) src/amiga/mui.c src/amiga/muistubs.c
+amipkg-mui: $(CORE) src/amiga/mui.c src/amiga/muistubs.c $(HDRS)
 	$(CC) $(CFLAGS) -Ivendor/mui/include -o $@ $(CORE) src/amiga/mui.c src/amiga/muistubs.c -s -lamiga -lgcc
 
 clean:
