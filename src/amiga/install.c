@@ -491,6 +491,91 @@ size_t amipkg_run_recipe(const arecipe *recipe, const char *extract_dir,
  * (flat archives, multiple roots, a lone file) must be wrapped in a <id>/
  * drawer by the caller - loose files must never pile up in the install dir
  * root (tester report: amipkg-client + Amelinium spilled their files there). */
+/* Self-update must reach the binaries ACTUALLY IN USE, not just the data
+ * prefix: on older layouts the running `amipkg` lives elsewhere (the early
+ * Imager images shipped C:amipkg + SYS:Tools/amipkg-gui with the data drawer
+ * behind an assign). Without this, `upgrade amipkg` kept installing the new
+ * version into the prefix drawer while the user kept launching the old copy -
+ * "it sees 0.5.2, installs it, and still runs the old one" (A4000 report).
+ * After the recipe placed the new files, mirror each amipkg-family file onto
+ * (a) the running program's own directory and (b) the legacy locations IF a
+ * stale copy exists there. Best-effort: a failed copy never fails the update
+ * (an in-use file just stays until the next run). */
+static const char *selfupdate_basename(const char *path)
+{
+    const char *b = path, *p;
+    for (p = path; *p; p++) if (*p == '/' || *p == ':') b = p + 1;
+    return b;
+}
+
+/* Case-insensitive compare (Amiga filesystems); newlib's stricmp is unsafe. */
+static int ci_eq(const char *a, const char *b)
+{
+    size_t k;
+    for (k = 0; ; k++) {
+        int ca = tolower((unsigned char)a[k]);
+        int cb = tolower((unsigned char)b[k]);
+        if (ca != cb) return 0;
+        if (!ca) return 1;
+    }
+}
+
+void amipkg_selfupdate_mirror(char (*paths)[256], size_t n)
+{
+    static const char *family[] = { "amipkg", "amipkg-gui", "amipkg-mui",
+                                    "amipkg-gui.info", "amipkg-mui.info",
+                                    "amipkg.guide", NULL };
+    char own[300];
+    BPTR l = GetProgramDir();
+    size_t i, k, refreshed = 0;
+    own[0] = '\0';
+    if (l) NameFromLock(l, (STRPTR)own, sizeof own);
+    for (i = 0; i < n; i++) {
+        const char *base = selfupdate_basename(paths[i]);
+        int in_family = 0;
+        for (k = 0; family[k]; k++)
+            if (ci_eq(base, family[k])) { in_family = 1; break; }
+        if (!in_family) continue;
+        /* (a) the running program's own drawer */
+        if (own[0]) {
+            char dst[340];
+            size_t len = strlen(own);
+            snprintf(dst, sizeof dst, "%s%s%s", own,
+                     (len && own[len - 1] == ':') ? "" : "/", base);
+            if (!ci_eq(dst, paths[i])) {
+                BPTR dl = Lock((STRPTR)dst, ACCESS_READ);
+                int existed = dl != 0;
+                if (dl) UnLock(dl);
+                /* Copy into the running drawer even when absent there:
+                 * whoever launches from this drawer must get the new set. */
+                if (copy_file(paths[i], dst)) refreshed++;
+                (void)existed;
+            }
+        }
+        /* (b) known legacy homes - refresh ONLY where a stale copy exists */
+        {
+            const char *legacy = NULL;
+            char dst[64];
+            if (ci_eq(base, "amipkg")) legacy = "C:amipkg";
+            else if (ci_eq(base, "amipkg-gui")) legacy = "SYS:Tools/amipkg-gui";
+            else if (ci_eq(base, "amipkg-mui")) legacy = "SYS:Tools/amipkg-mui";
+            if (legacy) {
+                snprintf(dst, sizeof dst, "%s", legacy);
+                if (!ci_eq(dst, paths[i])) {
+                    BPTR dl = Lock((STRPTR)dst, ACCESS_READ);
+                    if (dl) {
+                        UnLock(dl);
+                        if (copy_file(paths[i], dst)) refreshed++;
+                    }
+                }
+            }
+        }
+    }
+    if (refreshed)
+        printf("Refreshed %lu running/legacy cop%s of amipkg alongside the install.\n",
+               (unsigned long)refreshed, refreshed == 1 ? "y" : "ies");
+}
+
 /* One shared walk buffer (BSS budget: 1 MB machines) - the callers below
  * never overlap, each does its own fresh walk. */
 static char g_walk_pool[ARUN_MAX_OPS][256];

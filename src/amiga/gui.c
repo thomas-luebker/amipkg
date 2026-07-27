@@ -748,11 +748,25 @@ static void action_adopt(void)
     struct FileRequester *fr;
     char cmd[400], verb[48];
     if (g_busy) { set_status("An operation is already running."); return; }
-    if (g_selected < 0 || (size_t)g_selected >= g_nrows) { set_status("Select the package you already have."); return; }
+    if (g_selected < 0 || (size_t)g_selected >= g_nrows) {
+        /* A status line is too easy to miss - explain the flow in a
+         * requester instead (parity with amipkg-mui). */
+        req("Adopt Existing",
+            "Adopt puts an app you ALREADY have under amipkg's care:\n\n"
+            "1. Select the matching package in the list first\n"
+            "   (any view - e.g. 'visage' for your Visage install).\n"
+            "2. Package menu -> Adopt Existing...\n"
+            "3. Pick the drawer where the app lives.\n\n"
+            "amipkg then inventories that drawer: updates land there,\n"
+            "and Remove can cleanly uninstall it.");
+        return;
+    }
     if (!AslBase) { set_status("asl.library unavailable - use: amipkg adopt <id> <drawer>"); return; }
     fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest,
             ASLFR_TitleText,   (ULONG)"Where is it installed? (pick its drawer)",
             ASLFR_DrawersOnly, TRUE,
+            g_win ? ASLFR_Window : TAG_IGNORE, (ULONG)g_win,
+            ASLFR_SleepWindow, TRUE,
             TAG_END);
     if (!fr) { set_status("Could not open the drawer requester."); return; }
     if (AslRequest(fr, NULL) && fr->fr_Drawer && fr->fr_Drawer[0]) {

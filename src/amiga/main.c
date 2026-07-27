@@ -54,6 +54,7 @@ size_t amipkg_run_recipe(const arecipe *recipe, const char *extract_dir,
 size_t amipkg_install_generic(const char *extract_dir, const char *dest_root,
                               char (*out_paths)[256], size_t max);
 int amipkg_extract_single_top_dir(const char *extract_dir);
+void amipkg_selfupdate_mirror(char (*paths)[256], size_t n);
 void amipkg_ensure_dirs(void);
 long long amipkg_volume_free(const char *path);   /* -1 = unknown (don't block) */
 int amipkg_rename(const char *from, const char *to);   /* dos Rename; 0 = ok */
@@ -121,6 +122,7 @@ static size_t amipkg_run_recipe(const arecipe *rc, const char *e, const char *b,
 static size_t amipkg_install_generic(const char *e, const char *d, char (*o)[256], size_t m)
 { (void)e; (void)d; (void)o; (void)m; return 0; }
 static int amipkg_extract_single_top_dir(const char *e) { (void)e; return 1; }
+static void amipkg_selfupdate_mirror(char (*p)[256], size_t n) { (void)p; (void)n; }
 static void amipkg_ensure_dirs(void) {}
 static long long amipkg_volume_free(const char *p) { (void)p; return -1; }
 static int amipkg_rename(const char *f, const char *t) { return rename(f, t); }
@@ -639,6 +641,9 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
         if (tree) ajson_free(tree); return 10;
     }
     for (i = 0; i < n; i++) receipt_record_file(e->id, paths[i]);
+    /* Self-update: also refresh the binaries actually in use (own program
+     * drawer + legacy C:/SYS:Tools homes) - see amipkg_selfupdate_mirror. */
+    if (strcmp(e->id, "amipkg") == 0) amipkg_selfupdate_mirror(paths, n);
     if (e->has_recipe) {
         /* Record boot-script edits (scripts/<id>.edits, target|marker|version)
          * so `remove` can strip the overlay blocks, and save any removeScript
