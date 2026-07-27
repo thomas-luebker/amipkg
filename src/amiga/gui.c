@@ -396,10 +396,15 @@ static void poll_async(void)
     BPTR fh;
     if (!g_busy) return;
     g_busy_ticks++;
-    /* Ticking status once a second - visible proof the operation is alive. */
-    if ((g_busy_ticks % 10) == 0) {
+    /* Living status: a classic spinner plus elapsed m:ss (parity with
+     * amipkg-mui) - updated every 2nd tick (~5 Hz) to keep GT_SetGadgetAttrs
+     * traffic modest. */
+    if ((g_busy_ticks % 2) == 0) {
+        static const char spin[] = "|/-\\";
         char b[96];
-        snprintf(b, sizeof b, "%s running... %ld s", g_busy_verb, g_busy_ticks / 10);
+        long secs = g_busy_ticks / 10;
+        snprintf(b, sizeof b, "%s %c  %ld:%02ld", g_busy_verb,
+                 spin[(g_busy_ticks / 2) & 3], secs / 60, secs % 60);
         set_status(b);
     }
     /* Stream progress ~2x/s (ticks fire ~10x/s). */

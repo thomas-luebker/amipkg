@@ -532,10 +532,16 @@ static void poll_async(void)
     BPTR fh;
     if (!g_busy) return;
     g_busy_ticks++;
-    /* Ticking status once a second - visible proof the operation is alive. */
-    if ((g_busy_ticks % 4) == 0) {
+    /* Living status: a classic spinner (rotates on every 250 ms heartbeat)
+     * plus the elapsed time as m:ss - the raw seconds counter read like a
+     * stopwatch (tester feedback). The actual activity streams in the
+     * progress line below. */
+    {
+        static const char spin[] = "|/-\\";
         char b[96];
-        snprintf(b, sizeof b, "%s running... %ld s", g_busy_verb, g_busy_ticks / 4);
+        long secs = g_busy_ticks / 4;
+        snprintf(b, sizeof b, "%s %c  %ld:%02ld", g_busy_verb,
+                 spin[g_busy_ticks & 3], secs / 60, secs % 60);
         set_status(b);
     }
     if ((g_busy_ticks % 2) == 0) {          /* ~2x/s at a 250 ms heartbeat */
