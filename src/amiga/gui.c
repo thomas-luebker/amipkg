@@ -367,6 +367,29 @@ static void show_progress_line(const char *line)
     } else set_progress(line);
 }
 /* One INTUITICKS heartbeat while an async op runs. */
+/* Did the finished operation update amipkg ITSELF? The CLI prints a marker
+ * NOTE line; scan the output for it (streamed with overlap - the file can be
+ * a long Update All log). */
+static int output_mentions_selfupdate(void)
+{
+    static char buf[4096];
+    const char *needle = "amipkg itself was updated";
+    size_t nl = strlen(needle), keep = 0;
+    int found = 0;
+    BPTR fh = Open((STRPTR)ASYNC_OUT, MODE_OLDFILE);
+    LONG n;
+    if (!fh) return 0;
+    while (!found && (n = Read(fh, buf + keep, (LONG)(sizeof buf - keep - 1))) > 0) {
+        size_t total = keep + (size_t)n;
+        buf[total] = 0;
+        if (strstr(buf, needle)) { found = 1; break; }
+        keep = total > nl ? nl : total;
+        memmove(buf, buf + total - keep, keep);
+    }
+    Close(fh);
+    return found;
+}
+
 static void poll_async(void)
 {
     char line[160];
@@ -402,6 +425,11 @@ static void poll_async(void)
             else         snprintf(st, sizeof st, "%s FAILED (rc %ld) - see the line below.", g_busy_verb, rc);
             action_refresh_after_op();
             set_status(st);
+            if (rc == 0 && output_mentions_selfupdate())
+                req("amipkg updated",
+                    "amipkg itself was updated.\n\n"
+                    "This window is still running the PREVIOUS version -\n"
+                    "please close and restart amipkg to use the new one.");
             /* Status lines truncate - a failure ALWAYS pops the full CLI
              * message in a requester (parity with amipkg-mui). */
             if (rc != 0) {

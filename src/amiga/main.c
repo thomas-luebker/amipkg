@@ -649,8 +649,14 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
     }
     for (i = 0; i < n; i++) receipt_record_file(e->id, paths[i]);
     /* Self-update: also refresh the binaries actually in use (own program
-     * drawer + legacy C:/SYS:Tools homes) - see amipkg_selfupdate_mirror. */
-    if (strcmp(e->id, "amipkg") == 0) amipkg_selfupdate_mirror(paths, n);
+     * drawer + legacy C:/SYS:Tools homes) - see amipkg_selfupdate_mirror.
+     * The NOTE line doubles as the GUIs' restart-requester marker - keep
+     * the wording in sync with gui.c/mui.c poll_async. */
+    if (strcmp(e->id, "amipkg") == 0) {
+        amipkg_selfupdate_mirror(paths, n);
+        printf("NOTE: amipkg itself was updated - please restart amipkg "
+               "(and any open amipkg GUI) to run the new version.\n");
+    }
     if (e->has_recipe) {
         /* Record boot-script edits (scripts/<id>.edits, target|marker|version)
          * so `remove` can strip the overlay blocks, and save any removeScript

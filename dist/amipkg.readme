@@ -2,7 +2,7 @@ Short:        Package manager for AmigaOS 3.x (signed catalog)
 Author:       thomas@amiga-imager.com (Thomas Luebker)
 Uploader:     thomas@amiga-imager.com (Thomas Luebker)
 Type:         util/pack
-Version:      0.5.7
+Version:      0.5.8
 Architecture: m68k-amigaos >= 3.0
 Distribution: Aminet
 URL:          https://github.com/thomas-luebker/amipkg
