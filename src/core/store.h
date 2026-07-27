@@ -30,11 +30,15 @@ char *amipkg_data_path(const char *rel);
 
 /* THE version - single source for $VER tags, About boxes, the UA string
  * and the self-seeded receipt. Bump HERE (plus the catalog entry). */
-#define AMIPKG_VERSION "0.5.4"
+#define AMIPKG_VERSION "0.5.5"
 #define AMIPKG_VERDATE "27.7.2026"
 
 #define AMIPKG_DEFAULT_INSTALLDIR "SYS:Programs"
-#define MAX_PKGS   128
+/* 320: the signed catalog crossed 200 packages (2026-07-27) - 128 silently
+ * truncated the GUI lists at 'n' (tester report). Every consumer uses the
+ * ONE shared scratch below instead of per-function statics, so raising this
+ * costs each binary one buffer, not fourteen. */
+#define MAX_PKGS   320
 #define MAX_FILES  512
 
 /* Read a whole file into a malloc'd NUL-terminated buffer (caller frees).
@@ -48,6 +52,11 @@ int sha256_of_file(const char *path, char out_hex[65]);
 /* Load the installed-packages receipt list (AMIPKG:db/installed.txt).
  * Returns the count (0 if absent/empty). */
 size_t load_installed(rcpt_installed *out, size_t max);
+
+/* Shared scratch for installed-receipt loads (BSS budget: 1 MB machines).
+ * Safe because no holder calls another user mid-iteration (audited: upgrade
+ * snapshots ids first; remove inlines its rewrite; the rest are leaves). */
+extern rcpt_installed amipkg_inst_scratch[MAX_PKGS];
 
 /* Load one package's recorded file inventory (files/<id>.files). */
 size_t load_files_for(const char *id, rcpt_file *out, size_t max);

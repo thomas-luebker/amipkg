@@ -269,7 +269,7 @@ static struct Hook disp_hook;
 
 static void rebuild_list(void)
 {
-    static rcpt_installed inst[MAX_PKGS];
+    rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     size_t ninst, i;
     size_t cat_total = 0;
 
@@ -370,7 +370,7 @@ static Row *selected_row(void)
 
 static int selection_installed(void)
 {
-    static rcpt_installed inst[MAX_PKGS];
+    rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     Row *r = selected_row();
     if (!r) return 0;
     return id_installed(inst, load_installed(inst, MAX_PKGS), r->id);

@@ -470,7 +470,7 @@ static int cmp_recent(const void *a, const void *b)
 
 static void rebuild_list(void)
 {
-    static rcpt_installed inst[MAX_PKGS];
+    rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     size_t ninst, i;
     char label[80];
     init_list(&g_list);
@@ -547,7 +547,7 @@ static void rebuild_list(void)
 /* Is the currently-selected row an installed package (receipt DB)? */
 static int selection_installed(void)
 {
-    static rcpt_installed inst[MAX_PKGS];
+    rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     size_t ninst;
     if (g_selected < 0 || (size_t)g_selected >= g_nrows) return 0;
     ninst = load_installed(inst, MAX_PKGS);
@@ -608,7 +608,7 @@ static void action_check(void)
     char msg[2048];
     size_t used = 0, i;
     int updates = 0;
-    static rcpt_installed inst[MAX_PKGS];
+    rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     size_t ninst;
     set_status("Checking for updates...");
     if (!text) { set_status("No catalog yet - click Update Catalog."); return; }
@@ -658,7 +658,7 @@ static void action_info(void)
     const aidx_entry *e;
     char *text;
     char msg[1024];
-    static rcpt_installed inst[MAX_PKGS];
+    rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     size_t ninst, k;
     const char *id, *insver = "(not installed)";
     int ins;

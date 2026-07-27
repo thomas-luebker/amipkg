@@ -178,7 +178,7 @@ static void ensure_one(const char *path)
  * recorded version (manual updates). Never touches files. */
 static void selfseed_receipt(void)
 {
-    static rcpt_installed inst[MAX_PKGS];
+    rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     size_t n = load_installed(inst, MAX_PKGS), i;
     long have = -1;
     for (i = 0; i < n; i++)

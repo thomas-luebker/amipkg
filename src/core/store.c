@@ -232,3 +232,6 @@ int amipkg_set_installdir(const char *path)
     fclose(f);
     return 0;
 }
+
+/* See store.h - the one shared installed-receipt scratch buffer. */
+rcpt_installed amipkg_inst_scratch[MAX_PKGS];

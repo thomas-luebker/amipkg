@@ -174,7 +174,7 @@ static int load_index(aidx_index *idx)
 
 static int cmd_list(void)
 {
-    static rcpt_installed inst[MAX_PKGS];
+    rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     aidx_index idx;
     int have_idx;
     size_t n = load_installed(inst, MAX_PKGS), i;
@@ -197,7 +197,7 @@ static int cmd_list(void)
 
 static int cmd_check(void)
 {
-    static rcpt_installed inst[MAX_PKGS];
+    rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     aidx_index idx;
     size_t n, i;
     int updates = 0;
@@ -271,7 +271,7 @@ static int contains_ci(const char *hay, const char *needle)
  * matches the id, name, or category), marking what's already installed. */
 static int cmd_avail(const char *filter)
 {
-    static rcpt_installed inst[MAX_PKGS];
+    rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     aidx_index idx;
     size_t ninst, i;
     int shown = 0;
@@ -459,7 +459,7 @@ static int cmd_remove(const char *id, int force);   /* defined below */
 /* Is `id` recorded in the installed receipt DB? */
 static int pkg_installed(const char *id)
 {
-    static rcpt_installed inst[MAX_PKGS];
+    rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     size_t n = load_installed(inst, MAX_PKGS), i;
     for (i = 0; i < n; i++) if (strcmp(inst[i].id, id) == 0) return 1;
     return 0;
@@ -757,7 +757,7 @@ static int cmd_install(const char *id) { return cmd_install2(id, 0); }
  * digest mismatches (user-modified or corrupt). Advises reinstalls. */
 static int cmd_doctor(void)
 {
-    static rcpt_installed inst[MAX_PKGS];
+    rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     static rcpt_file files[MAX_FILES];
     size_t ninst = load_installed(inst, MAX_PKGS), i, j;
     int broken_pkgs = 0;
@@ -793,7 +793,7 @@ static int cmd_doctor(void)
  * old version first). With no argument it upgrades everything out of date. */
 static int cmd_upgrade(const char *only_id)
 {
-    static rcpt_installed inst[MAX_PKGS];
+    rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     static char todo[MAX_PKGS][64];
     aidx_index idx;
     size_t ninst, i, ntodo = 0;
@@ -838,7 +838,7 @@ static int cmd_verify(const char *file, const char *expected)
 
 static int cmd_remove(const char *id, int force)
 {
-    static rcpt_installed inst[MAX_PKGS];
+    rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     static rcpt_file files[MAX_FILES], other[MAX_FILES];
     size_t ninst = load_installed(inst, MAX_PKGS);
     size_t nfiles, i, j, k;
@@ -965,7 +965,7 @@ static int cmd_remove(const char *id, int force)
 /* Drop one id's line from installed.txt (receipt only - files untouched). */
 static void receipt_remove_installed(const char *id)
 {
-    static rcpt_installed inst[MAX_PKGS];
+    rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     size_t ninst = load_installed(inst, MAX_PKGS), i;
     FILE *f = fopen(amipkg_data_path("db/installed.txt"), "wb");
     char line[192];
