@@ -351,7 +351,9 @@ static void rebuild_list(void)
                  g_nrows == 1 ? "" : "s",
                  g_view == VIEW_AVAILABLE ? "available" : "installed");
         set_status(b);
-        snprintf(c, sizeof c, " Catalog: %lu | Installed: %lu | Shown: %lu",
+        /* Fixed-width numbers: the cell's minimum width is computed from the
+         * FIRST contents at window layout - growing digits would clip. */
+        snprintf(c, sizeof c, "Catalog: %4lu | Installed: %4lu | Shown: %4lu",
                  (unsigned long)cat_total, (unsigned long)ninst,
                  (unsigned long)g_nrows);
         set(txt_counts, MUIA_Text_Contents, (ULONG)c);
@@ -494,6 +496,13 @@ static void poll_async(void)
             if (rc == 0) snprintf(st, sizeof st, "%s finished.", g_busy_verb);
             else         snprintf(st, sizeof st, "%s FAILED (rc %ld) - see below.", g_busy_verb, rc);
             set_status(st);
+            /* Status cells truncate - a failure ALWAYS pops the full CLI
+             * message in a requester (tester report: 'couldn't open A...'). */
+            if (rc != 0)
+                MUI_Request(app, win, 0, (char *)"amipkg - operation failed",
+                            (char *)"_OK", "\033b%s failed (rc %ld).\033n\n\n%s",
+                            (ULONG)g_busy_verb, rc,
+                            (ULONG)(line[0] ? line : "(no output - check RAM:amipkg-mui.out)"));
         }
         update_action_state();
     } else if (g_busy_ticks > 4L * 60 * 30) {   /* ~30 min watchdog */
@@ -918,20 +927,23 @@ static int build_app(void)
                     End,
                 End,
 
-                /* status bar: counts | status | progress */
+                /* status bar: full-width message + compact counters cell;
+                 * progress gets its own full-width line. Long messages MUST
+                 * NOT be squeezed into narrow cells (tester report: a
+                 * three-cell row truncated every failure message). */
                 Child, HGroup,
-                    Child, txt_counts = TextObject, TextFrame, MUIA_HorizWeight, 25,
-                        MUIA_Text_Contents, (ULONG)"",
-                        MUIA_Background, MUII_TextBack,
-                    End,
-                    Child, txt_status = TextObject, TextFrame, MUIA_HorizWeight, 45,
+                    Child, txt_status = TextObject, TextFrame, MUIA_HorizWeight, 100,
                         MUIA_Text_Contents, (ULONG)"Welcome to amipkg.",
                         MUIA_Background, MUII_TextBack,
                     End,
-                    Child, txt_progress = TextObject, TextFrame, MUIA_HorizWeight, 30,
+                    Child, txt_counts = TextObject, TextFrame, MUIA_HorizWeight, 0,
                         MUIA_Text_Contents, (ULONG)"",
                         MUIA_Background, MUII_TextBack,
                     End,
+                End,
+                Child, txt_progress = TextObject, TextFrame,
+                    MUIA_Text_Contents, (ULONG)"",
+                    MUIA_Background, MUII_TextBack,
                 End,
             End,
         End,

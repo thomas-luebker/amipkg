@@ -247,6 +247,8 @@ static void update_action_state(void);   /* defined below */
 static void action_refresh_after_op(void);
 
 /* Read the LAST non-empty line of `path` into out (empty string when none). */
+static void req(const char *title, const char *body);   /* defined below */
+
 static void tail_line(const char *path, char *out, size_t outsize)
 {
     static char buf[4096];
@@ -359,6 +361,15 @@ static void poll_async(void)
             else         snprintf(st, sizeof st, "%s FAILED (rc %ld) - see the line below.", g_busy_verb, rc);
             action_refresh_after_op();
             set_status(st);
+            /* Status lines truncate - a failure ALWAYS pops the full CLI
+             * message in a requester (parity with amipkg-mui). */
+            if (rc != 0) {
+                static char body[280];
+                snprintf(body, sizeof body, "%s failed (rc %ld).\n\n%s",
+                         g_busy_verb, rc,
+                         line[0] ? line : "(no output - check RAM:amipkg-gui.out)");
+                req("amipkg - operation failed", body);
+            }
         }
         update_action_state();
     } else if (g_busy_ticks > 10L * 60 * 30) {   /* ~30 min watchdog */
