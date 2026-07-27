@@ -74,7 +74,7 @@ up to date from day one.
 The bundled catalog is signed and works offline immediately:
 
 ```
-amipkg avail              the whole catalog (100+ packages)
+amipkg avail              the whole catalog (200+ packages)
 amipkg avail vnc          search it
 amipkg info twinvnc       details for one package
 ```
