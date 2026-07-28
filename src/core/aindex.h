@@ -44,6 +44,11 @@ typedef struct {
     char added[12];            /* "YYYY-MM-DD" repo-added date, "" = unknown */
     int has_recipe;
     int user_visible;
+    /* Source repository id, stamped by arepo_load_merged. "" when the index
+     * was parsed standalone (aidx_parse never sets it). Front-ends SHOW this,
+     * because with pure-priority resolution a repo placed high can shadow a
+     * package from a lower one - that must be visible, not silent. */
+    char repo[32];
 } aidx_entry;
 
 typedef struct {

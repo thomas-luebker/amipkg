@@ -9,7 +9,7 @@ CFLAGS  = -std=c99 -Wall -Wextra -Werror -O2
 
 CORE = src/core/sha256.c src/core/aver.c src/core/receipts.c \
        src/core/ajson.c src/core/aindex.c src/core/resolve.c src/core/arecipe.c src/core/arun.c \
-       src/core/store.c
+       src/core/store.c src/core/arepo.c
 
 # TweetNaCl (vendored) compiled with warnings off — terse crypto.
 build/tweetnacl.o: src/core/tweetnacl.c

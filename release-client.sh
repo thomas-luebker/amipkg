@@ -2,7 +2,7 @@
 # release-client.sh — the ONE command for an amipkg client release.
 #
 #   amipkg/release-client.sh 0.5.8 [--notes "..."] [--notes-file f]
-#                                  [--dry-run] [--no-commit] [--aminet]
+#                                  [--dry-run] [--no-commit] [--aminet] [--no-smoke]
 #
 # Automates the full chain that was done by hand five times on 2026-07-27
 # (and misfired once): version bump -> CLEAN cross-build -> $VER verify of
@@ -32,10 +32,10 @@ AMINET_EMAIL="${AMINET_EMAIL:-thomas@amiga-imager.com}"
 VER="${1:-}"; shift || true
 case "$VER" in
     [0-9]*.[0-9]*.[0-9]*) ;;
-    *) echo "usage: release-client.sh <version, e.g. 0.5.8> [--notes ...] [--notes-file f] [--dry-run] [--no-commit] [--aminet]"; exit 1 ;;
+    *) echo "usage: release-client.sh <version, e.g. 0.5.8> [--notes ...] [--notes-file f] [--dry-run] [--no-commit] [--aminet] [--no-smoke]"; exit 1 ;;
 esac
 
-NOTES=""; NOTES_FILE=""; DRY=0; COMMIT=1; AMINET=0
+NOTES=""; NOTES_FILE=""; DRY=0; COMMIT=1; AMINET=0; SMOKE=1
 while [ $# -gt 0 ]; do
     case "$1" in
         --notes)      NOTES="$2"; shift 2 ;;
@@ -43,6 +43,7 @@ while [ $# -gt 0 ]; do
         --dry-run)    DRY=1; shift ;;
         --no-commit)  COMMIT=0; shift ;;
         --aminet)     AMINET=1; shift ;;
+        --no-smoke)   SMOKE=0; shift ;;
         *) echo "unknown option: $1"; exit 1 ;;
     esac
 done
@@ -87,6 +88,17 @@ sh "$HERE/dist/make-bundle.sh" >/dev/null
 SHA="$(shasum -a 256 "$HOME/Desktop/amipkg-client.lha" | cut -d' ' -f1)"
 SIZE="$(stat -f%z "$HOME/Desktop/amipkg-client.lha")"
 echo "    bundle: amipkg-client.lha $SIZE bytes, sha $SHA"
+
+# --- 3b. REAL-AmigaOS smoke gauntlet (FS-UAE) ---------------------------------
+# The just-built client must survive a live boot + catalog cycle before any
+# byte is published. --no-smoke skips (e.g. headless boxes without FS-UAE).
+if [ "$SMOKE" = 1 ] && [ "$DRY" = 0 ]; then
+    echo "==> smoke gauntlet (FS-UAE, ~90s)..."
+    sh "$HERE/smoke/run-smoke.sh" >"$HOME/Desktop/amipkg-smoke-$VER.log" 2>&1 \
+        || fail "SMOKE GAUNTLET FAILED - see ~/Desktop/amipkg-smoke-$VER.log (release NOT published)"
+    rm -f "$HOME/Desktop/amipkg-smoke-$VER.log"
+    echo "    smoke passed"
+fi
 
 if [ "$DRY" = 1 ]; then
     echo "==> DRY RUN — stopping before publish. Would have:"

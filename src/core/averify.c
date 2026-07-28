@@ -4,15 +4,17 @@
  * it verifies signatures produced by the app's CryptoKit Curve25519.Signing.
  */
 #include "averify.h"
+#include "arepo.h"
 #include "tweetnacl.h"
 
 #include <stdlib.h>
 #include <string.h>
 
-/* The project Ed25519 public key (base64), baked in. MUST match the app's
- * PackageCatalogLoader.bakedPublicKeyBase64 and the key that signed the repo. */
-static const char AMIPKG_PUBKEY_B64[] =
-    "tqZXIleRDYeU69ZsLNdvN790MUYdEKqvHctivyIhLEY=";
+/* The official project key now has its single definition in arepo.h
+ * (AMIPKG_OFFICIAL_PUBKEY) so the repo list and this verifier cannot drift
+ * apart - the official repo entry and the default wrapper below are the same
+ * key by construction. */
+static const char AMIPKG_PUBKEY_B64[] = AMIPKG_OFFICIAL_PUBKEY;
 
 /* TweetNaCl references randombytes for keygen/sign; verification never calls it,
  * but the symbol must resolve at link time. */
@@ -50,11 +52,19 @@ static int b64decode(const char *in, unsigned char *out, int outmax)
 
 int amipkg_verify_index(const unsigned char *msg, size_t msglen, const char *sig_base64)
 {
+    return amipkg_verify_index_key(msg, msglen, sig_base64, AMIPKG_PUBKEY_B64);
+}
+
+int amipkg_verify_index_key(const unsigned char *msg, size_t msglen,
+                            const char *sig_base64, const char *pubkey_base64)
+{
     unsigned char pk[32], sig[64];
     unsigned char *sm, *m;
     unsigned long long mlen = 0;
     int rc = 0;
-    if (b64decode(AMIPKG_PUBKEY_B64, pk, 32) != 32) return 0;
+    if (!pubkey_base64 || !pubkey_base64[0]) return 0;   /* unsigned != verified */
+    if (!sig_base64 || !sig_base64[0]) return 0;
+    if (b64decode(pubkey_base64, pk, 32) != 32) return 0;
     if (b64decode(sig_base64, sig, 64) != 64) return 0;
     /* crypto_sign_open expects a "signed message" = signature(64) || message. */
     sm = (unsigned char *)malloc(msglen + 64);

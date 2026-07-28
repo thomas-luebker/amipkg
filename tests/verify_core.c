@@ -8,6 +8,7 @@
  * like the env-gated goldens).
  */
 #include "averify.h"
+#include "arepo.h"      /* AMIPKG_OFFICIAL_PUBKEY (header-only constant) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,14 +44,29 @@ int main(void)
     while (sl && (sig[sl-1] == '\n' || sig[sl-1] == '\r' || sig[sl-1] == ' ')) sig[--sl] = '\0';
 
     int good = amipkg_verify_index((const unsigned char *)json, jl, sig);
+
+    /* MULTI-REPO: the same bytes+signature must NOT verify under a different
+     * repo's key. This is the property the whole per-repo trust model rests on
+     * - otherwise any signed repo could vouch for any other repo's catalog.
+     * The wrong key here is a valid, well-formed Ed25519 public key that simply
+     * is not the one that signed this index. */
+    const char *other_key = "iZ0dQBNJEHrZjs2VDlKUJ7Sd7yZ7B0Y8IuWQGZC0Xk8=";
+    int wrong_key = amipkg_verify_index_key((const unsigned char *)json, jl, sig, other_key);
+    /* An unsigned repo must never fall out of the key check as "verified". */
+    int no_key    = amipkg_verify_index_key((const unsigned char *)json, jl, sig, "");
+    /* The explicit-key path with the RIGHT key must agree with the wrapper. */
+    int right_key = amipkg_verify_index_key((const unsigned char *)json, jl, sig,
+                                            AMIPKG_OFFICIAL_PUBKEY);
+
     json[jl / 2] ^= 1;                         /* tamper one byte */
     int bad = amipkg_verify_index((const unsigned char *)json, jl, sig);
     free(json); free(sig);
 
-    if (good == 1 && bad == 0) {
-        printf("amipkg verify: PASSED (valid sig accepted, tamper rejected)\n");
+    if (good == 1 && bad == 0 && right_key == 1 && wrong_key == 0 && no_key == 0) {
+        printf("amipkg verify: PASSED (valid accepted, tamper/wrong-key/no-key rejected)\n");
         return 0;
     }
-    printf("amipkg verify: FAILED (good=%d, tamper=%d)\n", good, bad);
+    printf("amipkg verify: FAILED (good=%d, tamper=%d, right_key=%d, wrong_key=%d, no_key=%d)\n",
+           good, bad, right_key, wrong_key, no_key);
     return 1;
 }

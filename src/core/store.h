@@ -30,7 +30,7 @@ char *amipkg_data_path(const char *rel);
 
 /* THE version - single source for $VER tags, About boxes, the UA string
  * and the self-seeded receipt. Bump HERE (plus the catalog entry). */
-#define AMIPKG_VERSION "0.6.4"
+#define AMIPKG_VERSION "0.7.0"
 #define AMIPKG_VERDATE "28.7.2026"
 
 #define AMIPKG_DEFAULT_INSTALLDIR "SYS:Programs"
@@ -82,5 +82,11 @@ int amipkg_set_pkgdir(const char *id, const char *path);
  * whichever exists). No-op on the host build. Call once at startup -
  * the CLI (ensure_dirs) and BOTH GUIs do. */
 void amipkg_bridge_assigns(void);
+
+#ifndef __amigaos__
+/* HOST BUILD ONLY. The resolved prefix is cached; the test suite repoints it
+ * via AMIPKG_PREFIX and needs the cache dropped. Not compiled on the Amiga. */
+void amipkg_reset_prefix_for_test(void);
+#endif
 
 #endif /* AMIPKG_STORE_H */

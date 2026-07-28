@@ -46,6 +46,14 @@
 #include <string.h>
 
 #include "../core/store.h"
+#include "../core/arepo.h"
+
+/* The catalog the GUI shows: EVERY ENABLED REPO merged, in priority order -
+ * exactly what the CLI resolves against. The two front-ends must never
+ * disagree about what is available. Returns 1 on success (free with
+ * aidx_free), 0 when no repo has a catalog yet. */
+static int gui_load_index(aidx_index *idx) { return arepo_load_merged(idx) == 0; }
+
 #include "../core/aindex.h"
 #include "../core/aver.h"
 
@@ -79,7 +87,7 @@ enum { MENU_PROJECT = 0, MENU_PACKAGE = 1 };
 enum { PROJ_ABOUT = 0, PROJ_DOCS = 1, PROJ_QUIT = 3 };  /* item 2 is the bar */
 enum { PKG_UPDATECAT = 0, PKG_CHECK = 1, PKG_UPGRADE = 2, PKG_INFO = 3, PKG_INSTALL = 4,
        PKG_ADOPT = 5, PKG_SUBMIT = 6, PKG_REMOVE = 7, PKG_REFRESH = 8,
-       PKG_SETDIR = 10 };   /* item 9 = bar */
+       PKG_SETDIR = 10, PKG_REPOS = 11 };   /* item 9 = bar */
 
 /* View modes. */
 enum { VIEW_INSTALLED = 0, VIEW_AVAILABLE = 1 };
@@ -145,6 +153,7 @@ static struct NewMenu g_newmenu[] = {
     { NM_ITEM,  (STRPTR)"Refresh",       (STRPTR)"F", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)NM_BARLABEL,     NULL,        0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Install Drawer...", (STRPTR)"D", 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Repositories...", (STRPTR)"E", 0, 0, NULL },
     { NM_END,   NULL,                    NULL,        0, 0, NULL },
 };
 
@@ -557,8 +566,7 @@ static void rebuild_list(void)
         /* Old build-time receipts have no version ("-"): fall back to the
          * catalog's (build-time installs came from that same catalog). */
         aidx_index vidx;
-        char *vtext = read_file(amipkg_data_path("packages.json"));
-        int have_vidx = (vtext && aidx_parse(vtext, &vidx) == 0);
+        int have_vidx = gui_load_index(&vidx);
         for (i = 0; i < ninst; i++) {
             const char *v;
             if (!contains_ci(inst[i].id, g_filter)) continue;
@@ -571,22 +579,18 @@ static void rebuild_list(void)
             add_row(label, inst[i].id, NULL);
         }
         if (have_vidx) aidx_free(&vidx);
-        if (vtext) free(vtext);
         /* First run opens in this view: still harvest the category labels so
          * the filter cycle is populated before the first switch to Available. */
         if (g_ncats == 0) {
             aidx_index idx;
-            char *text = read_file(amipkg_data_path("packages.json"));
-            if (text && aidx_parse(text, &idx) == 0) {
+if (gui_load_index(&idx)) {
                 for (i = 0; i < idx.count; i++) note_category(idx.entries[i].category);
                 aidx_free(&idx);
             }
-            if (text) free(text);
-        }
+            }
     } else {
         aidx_index idx;
-        char *text = read_file(amipkg_data_path("packages.json"));
-        if (text && aidx_parse(text, &idx) == 0) {
+if (gui_load_index(&idx)) {
             static const aidx_entry *order[MAX_PKGS * 2];
             size_t norder = 0;
             const char *want_cat = g_cat_sel > 0 && (size_t)(g_cat_sel - 1) < g_ncats
@@ -616,7 +620,6 @@ static void rebuild_list(void)
         } else {
             set_status("No catalog yet - click Update Catalog.");
         }
-        if (text) free(text);
     }
 }
 
@@ -680,16 +683,13 @@ static void action_update_catalog(void)
 static void action_check(void)
 {
     static aidx_index idx;
-    char *text = read_file(amipkg_data_path("packages.json"));
     char msg[2048];
     size_t used = 0, i;
     int updates = 0;
     rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     size_t ninst;
     set_status("Checking for updates...");
-    if (!text) { set_status("No catalog yet - click Update Catalog."); return; }
-    if (aidx_parse(text, &idx) != 0) { free(text); set_status("The seeded index is unreadable."); return; }
-    free(text);
+    if (!gui_load_index(&idx)) { set_status("No catalog yet - click Update Catalog."); return; }
     ninst = load_installed(inst, MAX_PKGS);
     used += (size_t)snprintf(msg + used, sizeof msg - used, "Updates available:\n\n");
     for (i = 0; i < ninst && used < sizeof msg - 64; i++) {
@@ -738,7 +738,6 @@ static void action_info(void)
 {
     aidx_index idx;
     const aidx_entry *e;
-    char *text;
     char msg[1024];
     rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     size_t ninst, k;
@@ -746,10 +745,7 @@ static void action_info(void)
     int ins;
     if (g_selected < 0 || (size_t)g_selected >= g_nrows) { set_status("Select a package first."); return; }
     id = g_rowid[g_selected];
-    text = read_file(amipkg_data_path("packages.json"));
-    if (!text) { set_status("No catalog yet - click Update Catalog."); return; }
-    if (aidx_parse(text, &idx) != 0) { free(text); set_status("The seeded index is unreadable."); return; }
-    free(text);
+    if (!gui_load_index(&idx)) { set_status("No catalog yet - click Update Catalog."); return; }
     ninst = load_installed(inst, MAX_PKGS);
     ins = id_installed(inst, ninst, id);
     for (k = 0; k < ninst; k++)
@@ -767,6 +763,16 @@ static void action_info(void)
         if (e->added[0])
             u += (size_t)snprintf(msg + u, sizeof msg - u, "added: %s\n", e->added);
         u += (size_t)snprintf(msg + u, sizeof msg - u, "installed: %s\n", ins ? insver : "(not installed)");
+        {   /* Which repository this came from. Quiet in the single-repo
+             * default, where it would only be noise. */
+            arepo_list rl; arepo_load(&rl);
+            if (rl.count > 1) {
+                const char *rp = e->repo[0] ? e->repo : AREPO_OFFICIAL_ID;
+                int at = arepo_find(&rl, rp);
+                u += (size_t)snprintf(msg + u, sizeof msg - u, "repo: %s%s\n", rp,
+                        (at >= 0 && !arepo_is_signed(&rl.v[at])) ? " (UNSIGNED)" : "");
+            }
+        }
         if (e->dep_count) {
             u += (size_t)snprintf(msg + u, sizeof msg - u, "needs:");
             for (k = 0; k < e->dep_count && u < sizeof msg - 70; k++)
@@ -943,6 +949,311 @@ static void submit_form(void)
     }
     CloseWindow(w);
     FreeGadgets(glist);
+}
+
+/* ---- repositories --------------------------------------------------------- */
+
+/* Modal "Add a repository" form: id / URL / public key. Same template as
+ * submit_form. No networking and no crypto here - adding a repo is a config
+ * edit, so it runs in-process rather than shelling to C:amipkg. */
+static int repo_add_form(arepo_list *l)
+{
+    struct Window *w;
+    struct Gadget *glist = NULL, *gad, *g_id, *g_url, *g_key;
+    struct NewGadget ng;
+    struct TextAttr *ta = g_scr->Font;
+    WORD fh = g_scr->RastPort.TxHeight;
+    WORD rowH = fh + 6, gap = 6, labelW = 11 * (fh > 8 ? 8 : 7), fieldW = 340;
+    WORD top = (WORD)(g_scr->WBorTop + fh + 1) + gap;
+    WORD y = top, width, height;
+    int done = 0, add = 0, added = 0;
+    enum { RG_ID = 1, RG_URL, RG_KEY, RG_GO, RG_CANCEL };
+
+    gad = CreateContext(&glist);
+    memset(&ng, 0, sizeof ng);
+    ng.ng_TextAttr = ta; ng.ng_VisualInfo = g_vi;
+
+    ng.ng_LeftEdge = 8 + labelW; ng.ng_TopEdge = y;
+    ng.ng_Width = fieldW; ng.ng_Height = rowH;
+    ng.ng_GadgetText = (UBYTE *)"Name"; ng.ng_Flags = PLACETEXT_LEFT;
+    ng.ng_GadgetID = RG_ID;
+    gad = g_id = CreateGadget(STRING_KIND, gad, &ng, GTST_MaxChars, AREPO_ID_MAX - 1, TAG_END);
+    y += rowH + gap;
+
+    ng.ng_TopEdge = y; ng.ng_GadgetText = (UBYTE *)"URL"; ng.ng_GadgetID = RG_URL;
+    gad = g_url = CreateGadget(STRING_KIND, gad, &ng, GTST_MaxChars, AREPO_URL_MAX - 2, TAG_END);
+    y += rowH + gap;
+
+    ng.ng_TopEdge = y; ng.ng_GadgetText = (UBYTE *)"Public key"; ng.ng_GadgetID = RG_KEY;
+    gad = g_key = CreateGadget(STRING_KIND, gad, &ng, GTST_MaxChars, AREPO_KEY_MAX - 2, TAG_END);
+    y += rowH + gap + gap;
+
+    ng.ng_LeftEdge = 8 + labelW; ng.ng_TopEdge = y;
+    ng.ng_Width = 120; ng.ng_Height = rowH;
+    ng.ng_GadgetText = (UBYTE *)"Add"; ng.ng_Flags = 0; ng.ng_GadgetID = RG_GO;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
+    ng.ng_LeftEdge = 8 + labelW + 120 + gap; ng.ng_Width = 100;
+    ng.ng_GadgetText = (UBYTE *)"Cancel"; ng.ng_GadgetID = RG_CANCEL;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
+    y += rowH + gap;
+
+    if (!gad) { FreeGadgets(glist); set_status("Could not build the form."); return 0; }
+    width = 8 + labelW + fieldW + 8;
+    height = y + 4;
+
+    w = OpenWindowTags(NULL,
+        WA_Title, (ULONG)"Add a Repository",
+        WA_InnerWidth, width, WA_InnerHeight, height - top + gap,
+        WA_Left, (g_win ? g_win->LeftEdge + 50 : 80),
+        WA_Top,  (g_win ? g_win->TopEdge + 50 : 60),
+        WA_Flags, WFLG_DRAGBAR | WFLG_DEPTHGADGET | WFLG_CLOSEGADGET
+                | WFLG_ACTIVATE | WFLG_SMART_REFRESH,
+        WA_IDCMP, IDCMP_CLOSEWINDOW | IDCMP_REFRESHWINDOW | BUTTONIDCMP | STRINGIDCMP,
+        WA_Gadgets, (ULONG)glist,
+        WA_PubScreen, (ULONG)g_scr,
+        TAG_END);
+    if (!w) { FreeGadgets(glist); set_status("Could not open the window."); return 0; }
+    GT_RefreshWindow(w, NULL);
+    ActivateGadget(g_id, w, NULL);
+
+    while (!done) {
+        struct IntuiMessage *imsg;
+        WaitPort(w->UserPort);
+        while ((imsg = GT_GetIMsg(w->UserPort)) != NULL) {
+            ULONG cls = imsg->Class;
+            struct Gadget *hit = (struct Gadget *)imsg->IAddress;
+            GT_ReplyIMsg(imsg);
+            if (cls == IDCMP_CLOSEWINDOW) done = 1;
+            else if (cls == IDCMP_REFRESHWINDOW) { GT_BeginRefresh(w); GT_EndRefresh(w, TRUE); }
+            else if (cls == IDCMP_GADGETUP && hit) {
+                if (hit->GadgetID == RG_CANCEL) done = 1;
+                else if (hit->GadgetID == RG_GO)  { done = 1; add = 1; }
+            }
+        }
+    }
+
+    if (add) {
+        const char *sid  = (const char *)((struct StringInfo *)g_id->SpecialInfo)->Buffer;
+        const char *surl = (const char *)((struct StringInfo *)g_url->SpecialInfo)->Buffer;
+        const char *skey = (const char *)((struct StringInfo *)g_key->SpecialInfo)->Buffer;
+        static char id[AREPO_ID_MAX], url[AREPO_URL_MAX], key[AREPO_KEY_MAX];
+        int rc;
+        strncpy(id, sid, sizeof id - 1);    id[sizeof id - 1] = '\0';
+        strncpy(url, surl, sizeof url - 1); url[sizeof url - 1] = '\0';
+        strncpy(key, skey, sizeof key - 1); key[sizeof key - 1] = '\0';
+        CloseWindow(w); FreeGadgets(glist);
+
+        if (arepo_id_valid(id) != 0) {
+            req("Add a Repository",
+                "That name will not do.\n\n"
+                "Use letters, digits, - and _ only (it becomes a\n"
+                "drawer name under repos/).");
+            return 0;
+        }
+        if (arepo_url_valid(url) != 0) {
+            req("Add a Repository", "The URL must start with http:// or https://.");
+            return 0;
+        }
+        if (arepo_find(l, id) >= 0) {
+            req("Add a Repository", "You already have a repository with that name.");
+            return 0;
+        }
+        /* The ONE place the unsigned decision gets made in this GUI. Say what
+         * it actually costs - see confirm_unsigned() in the CLI, same wording. */
+        if (!key[0]) {
+            if (!req_confirm("Unsigned Repository",
+                    "This repository has no public key, so its catalog\n"
+                    "will NOT be verified.\n\n"
+                    "That means trusting the person running it AND every\n"
+                    "hop in between - your ISP, router, any proxy. amipkg\n"
+                    "fetches over plain HTTP, and an unsigned catalog can\n"
+                    "be altered on the way to you. The archive checksums\n"
+                    "do not help: they live inside that same catalog.\n\n"
+                    "Ask the repo owner for their public key if they have one.\n\n"
+                    "Add it as an UNSIGNED repository anyway?",
+                    "Add Unsigned|Cancel"))
+                return 0;
+        }
+        rc = arepo_add(l, id, url, key[0] ? key : NULL);
+        if (rc == 5) { req("Add a Repository", "That does not look like a base64 public key."); return 0; }
+        if (rc == 1) { req("Add a Repository", "The repository list is full."); return 0; }
+        if (rc != 0) { req("Add a Repository", "Could not add that repository."); return 0; }
+        if (arepo_save(l) != 0) { req("Add a Repository", "Could not save the repository list."); return 0; }
+        added = 1;
+    } else {
+        CloseWindow(w);
+        FreeGadgets(glist);
+    }
+    return added;
+}
+
+/* Modal repository manager: the list, plus the config edits. Everything here
+ * is local file state, so no C:amipkg round-trip is needed - only 'Update'
+ * afterwards touches the network, and that is the existing async path. */
+static void repo_manager(void)
+{
+    static arepo_list rl;
+    static struct List rlist;
+    static struct Node rnodes[AREPO_MAX];
+    static char rlabels[AREPO_MAX][90];
+    struct Window *w;
+    struct Gadget *glist = NULL, *gad, *lv;
+    struct NewGadget ng;
+    struct TextAttr *ta = g_scr->Font;
+    WORD fh = g_scr->RastPort.TxHeight;
+    WORD rowH = fh + 6, gap = 6;
+    WORD top = (WORD)(g_scr->WBorTop + fh + 1) + gap;
+    WORD lvW = 380, lvH = rowH * 6, btnW = 110;
+    WORD y = top, width, height;
+    int done = 0, sel = 0, dirty = 0;
+    size_t i;
+    enum { RM_LIST = 1, RM_ADD, RM_REMOVE, RM_TOGGLE, RM_UP, RM_DOWN, RM_CLOSE };
+
+    if (g_busy) { set_status("An operation is already running."); return; }
+    arepo_load(&rl);
+
+    gad = CreateContext(&glist);
+    memset(&ng, 0, sizeof ng);
+    ng.ng_TextAttr = ta; ng.ng_VisualInfo = g_vi;
+
+    ng.ng_LeftEdge = 8; ng.ng_TopEdge = y;
+    ng.ng_Width = lvW; ng.ng_Height = lvH; ng.ng_GadgetID = RM_LIST; ng.ng_Flags = 0;
+    ng.ng_GadgetText = NULL;
+    init_list(&rlist);
+    gad = lv = CreateGadget(LISTVIEW_KIND, gad, &ng,
+                            GTLV_Labels, (ULONG)&rlist, GTLV_ShowSelected, 0L, TAG_END);
+
+    {
+        WORD by = top;
+        struct { UBYTE *t; int id; } btns[] = {
+            {(UBYTE *)"Add...",     RM_ADD},
+            {(UBYTE *)"Remove",     RM_REMOVE},
+            {(UBYTE *)"Enable/Off", RM_TOGGLE},
+            {(UBYTE *)"Move Up",    RM_UP},
+            {(UBYTE *)"Move Down",  RM_DOWN},
+            {(UBYTE *)"Close",      RM_CLOSE},
+        };
+        size_t b;
+        ng.ng_LeftEdge = 8 + lvW + gap; ng.ng_Width = btnW; ng.ng_Height = rowH;
+        for (b = 0; b < sizeof btns / sizeof btns[0]; b++) {
+            ng.ng_TopEdge = by; ng.ng_GadgetText = btns[b].t; ng.ng_GadgetID = btns[b].id;
+            gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
+            by += rowH + gap;
+        }
+        y = (by > top + lvH) ? by : (WORD)(top + lvH + gap);
+    }
+
+    if (!gad) { FreeGadgets(glist); set_status("Could not build the repository window."); return; }
+    width = 8 + lvW + gap + btnW + 8;
+    height = y + 4;
+
+    w = OpenWindowTags(NULL,
+        WA_Title, (ULONG)"Repositories - order is priority",
+        WA_InnerWidth, width, WA_InnerHeight, height - top + gap,
+        WA_Left, (g_win ? g_win->LeftEdge + 30 : 60),
+        WA_Top,  (g_win ? g_win->TopEdge + 30 : 40),
+        WA_Flags, WFLG_DRAGBAR | WFLG_DEPTHGADGET | WFLG_CLOSEGADGET
+                | WFLG_ACTIVATE | WFLG_SMART_REFRESH,
+        WA_IDCMP, IDCMP_CLOSEWINDOW | IDCMP_REFRESHWINDOW | BUTTONIDCMP | LISTVIEWIDCMP,
+        WA_Gadgets, (ULONG)glist,
+        WA_PubScreen, (ULONG)g_scr,
+        TAG_END);
+    if (!w) { FreeGadgets(glist); set_status("Could not open the repository window."); return; }
+
+    /* Rebuild the visible list from rl. Detach first: GadTools must not walk a
+     * List while we are rewriting its nodes. */
+#define REPO_RELIST() do {                                                      \
+        GT_SetGadgetAttrs(lv, w, NULL, GTLV_Labels, ~0L, TAG_END);              \
+        arepo_load(&rl);   /* re-read: every mutation saved first, and an   */  \
+                           /* emptied list comes back as the official repo, */  \
+                           /* so the window must show what is really there. */  \
+        init_list(&rlist);                                                      \
+        for (i = 0; i < rl.count; i++) {                                        \
+            snprintf(rlabels[i], sizeof rlabels[i], "%d. %-14s %-8s %s",        \
+                     (int)(i + 1), rl.v[i].id,                                  \
+                     rl.v[i].enabled ? "on" : "OFF",                            \
+                     arepo_is_signed(&rl.v[i]) ? "signed" : "UNSIGNED");        \
+            rnodes[i].ln_Name = rlabels[i];                                     \
+            AddTail(&rlist, &rnodes[i]);                                        \
+        }                                                                       \
+        GT_SetGadgetAttrs(lv, w, NULL, GTLV_Labels, (ULONG)&rlist, TAG_END);    \
+    } while (0)
+
+    REPO_RELIST();
+    GT_RefreshWindow(w, NULL);
+
+    while (!done) {
+        struct IntuiMessage *imsg;
+        WaitPort(w->UserPort);
+        while ((imsg = GT_GetIMsg(w->UserPort)) != NULL) {
+            ULONG cls = imsg->Class;
+            UWORD code = imsg->Code;
+            struct Gadget *hit = (struct Gadget *)imsg->IAddress;
+            GT_ReplyIMsg(imsg);
+            if (cls == IDCMP_CLOSEWINDOW) { done = 1; continue; }
+            if (cls == IDCMP_REFRESHWINDOW) { GT_BeginRefresh(w); GT_EndRefresh(w, TRUE); continue; }
+            if (cls != IDCMP_GADGETUP || !hit) continue;
+
+            switch (hit->GadgetID) {
+            case RM_LIST:
+                sel = (int)code;
+                break;
+            case RM_CLOSE:
+                done = 1;
+                break;
+            case RM_ADD:
+                if (repo_add_form(&rl)) { dirty = 1; REPO_RELIST(); }
+                break;
+            case RM_REMOVE:
+                if (sel < 0 || (size_t)sel >= rl.count) break;
+                if (req_confirm("Remove Repository",
+                                "Remove this repository from the list?\n\n"
+                                "Packages already installed from it stay\n"
+                                "installed; only the source goes away.",
+                                "Remove|Cancel")) {
+                    arepo_remove(&rl, rl.v[sel].id);
+                    if (arepo_save(&rl) == 0) dirty = 1;
+                    if (sel > 0 && (size_t)sel >= rl.count) sel--;
+                    REPO_RELIST();
+                }
+                break;
+            case RM_TOGGLE:
+                if (sel < 0 || (size_t)sel >= rl.count) break;
+                arepo_set_enabled(&rl, rl.v[sel].id, !rl.v[sel].enabled);
+                if (arepo_save(&rl) == 0) dirty = 1;
+                REPO_RELIST();
+                break;
+            case RM_UP:
+            case RM_DOWN:
+                if (sel < 0 || (size_t)sel >= rl.count) break;
+                {
+                    int delta = (hit->GadgetID == RM_UP) ? -1 : 1;
+                    int to = sel + delta;
+                    if (to < 0 || (size_t)to >= rl.count) break;
+                    arepo_move(&rl, rl.v[sel].id, delta);
+                    if (arepo_save(&rl) == 0) dirty = 1;
+                    sel = to;
+                    REPO_RELIST();
+                    GT_SetGadgetAttrs(lv, w, NULL, GTLV_Selected, (ULONG)sel, TAG_END);
+                }
+                break;
+            default:
+                break;
+            }
+        }
+    }
+#undef REPO_RELIST
+
+    GT_SetGadgetAttrs(lv, w, NULL, GTLV_Labels, ~0L, TAG_END);
+    CloseWindow(w);
+    FreeGadgets(glist);
+
+    if (dirty) {
+        /* The merged catalog just changed shape - repopulate, and point at the
+         * one thing that actually fetches anything. */
+        action_refresh_after_op();
+        set_status("Repositories changed - run Update Catalog to fetch them.");
+    }
 }
 
 static void action_adopt(void)
@@ -1401,6 +1712,7 @@ static int dispatch_menu(UWORD menuNum, UWORD itemNum)
         else if (itemNum == PKG_INSTALL) action_install();
         else if (itemNum == PKG_ADOPT) action_adopt();
         else if (itemNum == PKG_SUBMIT) submit_form();
+        else if (itemNum == PKG_REPOS) repo_manager();
         else if (itemNum == PKG_REMOVE) action_remove();
         else if (itemNum == PKG_REFRESH) action_refresh();
         else if (itemNum == PKG_SETDIR) action_set_dir();

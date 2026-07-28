@@ -43,6 +43,14 @@
 #include <string.h>
 
 #include "../core/store.h"
+#include "../core/arepo.h"
+
+/* The catalog the GUI shows: EVERY ENABLED REPO merged, in priority order -
+ * exactly what the CLI resolves against. The two front-ends must never
+ * disagree about what is available. Returns 1 on success (free with
+ * aidx_free), 0 when no repo has a catalog yet. */
+static int gui_load_index(aidx_index *idx) { return arepo_load_merged(idx) == 0; }
+
 #include "../core/aindex.h"
 #include "../core/aver.h"
 
@@ -65,6 +73,8 @@ enum {
     ID_UPDATE = 1, ID_CHECK, ID_UPALL, ID_INFO, ID_INSTALL, ID_RUN,
     ID_REMOVE, ID_REFRESH, ID_SETDIR, ID_ABOUT, ID_ADOPT, ID_DOCS, ID_SUBMIT,
     ID_SUBMIT_GO,
+    ID_REPOS, ID_REPO_ADD, ID_REPO_ADDGO, ID_REPO_REMOVE, ID_REPO_TOGGLE,
+    ID_REPO_UP, ID_REPO_DOWN,
     ID_VIEW, ID_CAT, ID_SORT, ID_FIND, ID_SELECT, ID_DCLICK
 };
 
@@ -104,6 +114,16 @@ static Object *win_sub, *str_sub_id, *str_sub_url, *str_sub_desc, *cyc_sub_cat, 
 static const char *g_sub_catlabels[] = { "Utilities", "Games", "Internet", "Audio",
     "Text", "Network", "Graphics", "Development", "Libraries", "Emulation",
     "System", NULL };
+/* Repository manager (multi-repo). Kept in LOCKSTEP with gui.c's
+ * repo_manager/repo_add_form - same actions, same wording, same warning. */
+static Object *win_repo, *lv_repo, *lst_repo;
+static Object *bt_repo_add, *bt_repo_remove, *bt_repo_toggle,
+              *bt_repo_up, *bt_repo_down, *bt_repo_close;
+static Object *win_repoadd, *str_repo_id, *str_repo_url, *str_repo_key,
+              *bt_repoadd_go, *bt_repoadd_cancel;
+static arepo_list g_repos;
+static char g_repolabels[AREPO_MAX][90];
+
 static Object *txt_status, *txt_progress, *txt_desc, *txt_counts;
 static Object *bt_update, *bt_check, *bt_upall, *bt_info, *bt_install,
               *bt_run, *bt_remove, *bt_adopt, *bt_refresh;
@@ -287,8 +307,7 @@ static void rebuild_list(void)
         /* Old build-time receipts have no version ("-"): fall back to the
          * catalog's (build-time installs came from that same catalog). */
         aidx_index vidx;
-        char *vtext = read_file(amipkg_data_path("packages.json"));
-        int have_vidx = (vtext && aidx_parse(vtext, &vidx) == 0);
+        int have_vidx = gui_load_index(&vidx);
         if (have_vidx) cat_total = vidx.count;
         for (i = 0; i < ninst && g_nrows < MAX_PKGS; i++) {
             Row *r = &g_rows[g_nrows];
@@ -309,11 +328,9 @@ static void rebuild_list(void)
             g_nrows++;
         }
         if (have_vidx) aidx_free(&vidx);
-        if (vtext) free(vtext);
     } else {
         aidx_index idx;
-        char *text = read_file(amipkg_data_path("packages.json"));
-        if (text && aidx_parse(text, &idx) == 0) {
+if (gui_load_index(&idx)) {
             static const aidx_entry *order[MAX_PKGS * 2];
             size_t norder = 0;
             cat_total = idx.count;
@@ -346,7 +363,6 @@ static void rebuild_list(void)
         } else {
             set_status("No catalog yet - click Update Catalog.");
         }
-        if (text) free(text);
     }
     set(lst, MUIA_List_Quiet, FALSE);
     {
@@ -364,6 +380,35 @@ static void rebuild_list(void)
         set(txt_counts, MUIA_Text_Contents, (ULONG)c);
     }
     set_desc("");
+}
+
+/* Repopulate the repository listview from g_repos. LOCKSTEP with gui.c's
+ * REPO_RELIST - same columns, same wording. */
+static void repo_relist(void)
+{
+    size_t i;
+    arepo_load(&g_repos);
+    set(lst_repo, MUIA_List_Quiet, TRUE);
+    DoMethod(lst_repo, MUIM_List_Clear);
+    for (i = 0; i < g_repos.count && i < AREPO_MAX; i++) {
+        snprintf(g_repolabels[i], sizeof g_repolabels[i], "%d. %-14s %-8s %s",
+                 (int)(i + 1), g_repos.v[i].id,
+                 g_repos.v[i].enabled ? "on" : "OFF",
+                 arepo_is_signed(&g_repos.v[i]) ? "signed" : "UNSIGNED");
+        /* MUI keeps the pointer, so these labels must outlive the call -
+         * hence the static g_repolabels rather than a stack buffer. */
+        DoMethod(lst_repo, MUIM_List_InsertSingle,
+                 (ULONG)g_repolabels[i], MUIV_List_Insert_Bottom);
+    }
+    set(lst_repo, MUIA_List_Quiet, FALSE);
+}
+
+/* The merged catalog just changed shape: repopulate the package list and point
+ * at the one thing that actually fetches anything. */
+static void repo_changed(void)
+{
+    rebuild_list();
+    set_status("Repositories changed - click Update Catalog to fetch them.");
 }
 
 static Row *selected_row(void)
@@ -652,14 +697,10 @@ static void action_info(void)
 {
     aidx_index idx;
     const aidx_entry *e;
-    char *text;
     static char msg[1024];
     Row *r = selected_row();
     if (!r) { set_status("Select a package first."); return; }
-    text = read_file(amipkg_data_path("packages.json"));
-    if (!text) { set_status("No catalog yet - click Update Catalog."); return; }
-    if (aidx_parse(text, &idx) != 0) { free(text); set_status("Seeded index unreadable."); return; }
-    free(text);
+    if (!gui_load_index(&idx)) { set_status("No catalog yet - click Update Catalog."); return; }
     e = aidx_find(&idx, r->id);
     if (!e) {
         snprintf(msg, sizeof msg, "\033b%s\033n\n\nInstalled on this system\n(not in the catalog).", r->id);
@@ -672,6 +713,16 @@ static void action_info(void)
                               e->category, shown_version(e->version));
         if (e->added[0])
             u += (size_t)snprintf(msg + u, sizeof msg - u, "added: %s\n", e->added);
+        {   /* Which repository this came from. Quiet in the single-repo
+             * default, where it would only be noise. LOCKSTEP with gui.c. */
+            arepo_list rl; arepo_load(&rl);
+            if (rl.count > 1) {
+                const char *rp = e->repo[0] ? e->repo : AREPO_OFFICIAL_ID;
+                int at = arepo_find(&rl, rp);
+                u += (size_t)snprintf(msg + u, sizeof msg - u, "repo: %s%s\n", rp,
+                        (at >= 0 && !arepo_is_signed(&rl.v[at])) ? " (UNSIGNED)" : "");
+            }
+        }
         if (e->dep_count) {
             u += (size_t)snprintf(msg + u, sizeof msg - u, "needs:");
             for (k = 0; k < e->dep_count && u < sizeof msg - 70; k++)
@@ -887,13 +938,11 @@ static int build_app(void)
     /* Category labels for the cycle: harvested once from the seeded index. */
     {
         aidx_index idx;
-        char *text = read_file(amipkg_data_path("packages.json"));
         size_t i;
-        if (text && aidx_parse(text, &idx) == 0) {
+        if (gui_load_index(&idx)) {
             for (i = 0; i < idx.count; i++) note_category(idx.entries[i].category);
             aidx_free(&idx);
         }
-        if (text) free(text);
         g_catlabels[0] = "All categories";
         for (i = 0; i < g_ncats; i++) g_catlabels[i + 1] = g_catnames[i];
         g_catlabels[g_ncats + 1] = NULL;
@@ -951,6 +1000,9 @@ static int build_app(void)
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Install Drawer...",
                     MUIA_Menuitem_Shortcut, (ULONG)"D",
                     MUIA_UserData, ID_SETDIR, End,
+                MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Repositories...",
+                    MUIA_Menuitem_Shortcut, (ULONG)"E",
+                    MUIA_UserData, ID_REPOS, End,
             End,
         End),
 #endif
@@ -1104,6 +1156,68 @@ static int build_app(void)
                 End,
             End,
         End,
+
+        SubWindow, win_repo = WindowObject,
+            MUIA_Window_Title, (ULONG)"Repositories",
+            MUIA_Window_ID,    MAKE_ID('A','P','K','R'),
+            WindowContents, VGroup,
+                Child, TextObject,
+                    MUIA_Text_Contents, (ULONG)
+                        "Order is PRIORITY: the first repository that has a\n"
+                        "package is the one you get. Use Move Up / Move Down.",
+                End,
+                Child, lv_repo = ListviewObject,
+                    MUIA_Listview_List, lst_repo = ListObject, InputListFrame,
+                        MUIA_List_AdjustWidth, TRUE,
+                    End,
+                End,
+                Child, HGroup,
+                    Child, bt_repo_add    = SimpleButton("_Add..."),
+                    Child, bt_repo_remove = SimpleButton("_Remove"),
+                    Child, bt_repo_toggle = SimpleButton("Enable/_Off"),
+                End,
+                Child, HGroup,
+                    Child, bt_repo_up    = SimpleButton("Move _Up"),
+                    Child, bt_repo_down  = SimpleButton("Move _Down"),
+                    Child, bt_repo_close = SimpleButton("_Close"),
+                End,
+            End,
+        End,
+
+        SubWindow, win_repoadd = WindowObject,
+            MUIA_Window_Title, (ULONG)"Add a Repository",
+            MUIA_Window_ID,    MAKE_ID('A','P','K','A'),
+            WindowContents, VGroup,
+                Child, TextObject,
+                    MUIA_Text_Contents, (ULONG)
+                        "The URL is the drawer holding packages.json.\n"
+                        "Leave the key empty only if the repo is unsigned.",
+                End,
+                Child, ColGroup(2),
+                    Child, Label2("Name"),
+                    Child, str_repo_id = StringObject, StringFrame,
+                        MUIA_String_MaxLen, AREPO_ID_MAX,
+                        MUIA_String_Accept, (ULONG)"abcdefghijklmnopqrstuvwxyz"
+                                                  "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_",
+                        MUIA_CycleChain, 1,
+                    End,
+                    Child, Label2("URL"),
+                    Child, str_repo_url = StringObject, StringFrame,
+                        MUIA_String_MaxLen, AREPO_URL_MAX,
+                        MUIA_CycleChain, 1,
+                    End,
+                    Child, Label2("Public key"),
+                    Child, str_repo_key = StringObject, StringFrame,
+                        MUIA_String_MaxLen, AREPO_KEY_MAX,
+                        MUIA_CycleChain, 1,
+                    End,
+                End,
+                Child, HGroup,
+                    Child, bt_repoadd_go     = SimpleButton("_Add"),
+                    Child, bt_repoadd_cancel = SimpleButton("_Cancel"),
+                End,
+            End,
+        End,
     End;
     if (!app) return 0;
     trace("build_app: application tree created, wiring notifications");
@@ -1154,6 +1268,29 @@ static int build_app(void)
              (ULONG)win_sub, 3, MUIM_Set, MUIA_Window_Open, FALSE);
     DoMethod(win_sub, MUIM_Notify, MUIA_Window_CloseRequest, TRUE,
              (ULONG)win_sub, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+
+    /* Repository manager. Config edits only - nothing here touches the
+     * network, so they run in-process like the GadTools front-end. */
+    DoMethod(bt_repo_add, MUIM_Notify, MUIA_Pressed, FALSE,
+             (ULONG)app, 2, MUIM_Application_ReturnID, ID_REPO_ADD);
+    DoMethod(bt_repo_remove, MUIM_Notify, MUIA_Pressed, FALSE,
+             (ULONG)app, 2, MUIM_Application_ReturnID, ID_REPO_REMOVE);
+    DoMethod(bt_repo_toggle, MUIM_Notify, MUIA_Pressed, FALSE,
+             (ULONG)app, 2, MUIM_Application_ReturnID, ID_REPO_TOGGLE);
+    DoMethod(bt_repo_up, MUIM_Notify, MUIA_Pressed, FALSE,
+             (ULONG)app, 2, MUIM_Application_ReturnID, ID_REPO_UP);
+    DoMethod(bt_repo_down, MUIM_Notify, MUIA_Pressed, FALSE,
+             (ULONG)app, 2, MUIM_Application_ReturnID, ID_REPO_DOWN);
+    DoMethod(bt_repo_close, MUIM_Notify, MUIA_Pressed, FALSE,
+             (ULONG)win_repo, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+    DoMethod(win_repo, MUIM_Notify, MUIA_Window_CloseRequest, TRUE,
+             (ULONG)win_repo, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+    DoMethod(bt_repoadd_go, MUIM_Notify, MUIA_Pressed, FALSE,
+             (ULONG)app, 2, MUIM_Application_ReturnID, ID_REPO_ADDGO);
+    DoMethod(bt_repoadd_cancel, MUIM_Notify, MUIA_Pressed, FALSE,
+             (ULONG)win_repoadd, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+    DoMethod(win_repoadd, MUIM_Notify, MUIA_Window_CloseRequest, TRUE,
+             (ULONG)win_repoadd, 3, MUIM_Set, MUIA_Window_Open, FALSE);
     trace("build_app: notifications wired");
     return 1;
 }
@@ -1326,6 +1463,110 @@ static int gui_run(void)
             case ID_REMOVE:  action_remove(); break;
             case ID_SETDIR:  action_set_dir(); break;
             case ID_ADOPT:   action_adopt(); break;
+            case ID_REPOS:
+                repo_relist();
+                set(win_repo, MUIA_Window_Open, TRUE);
+                break;
+            case ID_REPO_ADD:
+                set(str_repo_id,  MUIA_String_Contents, (ULONG)"");
+                set(str_repo_url, MUIA_String_Contents, (ULONG)"");
+                set(str_repo_key, MUIA_String_Contents, (ULONG)"");
+                set(win_repoadd, MUIA_Window_Open, TRUE);
+                set(win_repoadd, MUIA_Window_ActiveObject, (ULONG)str_repo_id);
+                break;
+            case ID_REPO_ADDGO: {
+                char *sid = NULL, *surl = NULL, *skey = NULL;
+                int rc;
+                get(str_repo_id,  MUIA_String_Contents, &sid);
+                get(str_repo_url, MUIA_String_Contents, &surl);
+                get(str_repo_key, MUIA_String_Contents, &skey);
+                if (arepo_id_valid(sid ? sid : "") != 0) {
+                    MUI_Request(app, win_repoadd, 0, (char *)"Add a Repository", (char *)"_OK",
+                        (char *)"That name will not do.\n\n"
+                                "Use letters, digits, - and _ only\n"
+                                "(it becomes a drawer name under repos/).");
+                    break;
+                }
+                if (arepo_url_valid(surl ? surl : "") != 0) {
+                    MUI_Request(app, win_repoadd, 0, (char *)"Add a Repository", (char *)"_OK",
+                        (char *)"The URL must start with http:// or https://.");
+                    break;
+                }
+                if (arepo_find(&g_repos, sid) >= 0) {
+                    MUI_Request(app, win_repoadd, 0, (char *)"Add a Repository", (char *)"_OK",
+                        (char *)"You already have a repository with that name.");
+                    break;
+                }
+                /* The ONE place the unsigned decision is made in this GUI -
+                 * same wording as the CLI and the GadTools front-end. */
+                if (!skey || !skey[0]) {
+                    if (!MUI_Request(app, win_repoadd, 0, (char *)"Unsigned Repository",
+                            (char *)"Add _Unsigned|*_Cancel",
+                            (char *)"This repository has no public key, so its catalog\n"
+                                    "will NOT be verified.\n\n"
+                                    "That means trusting the person running it AND every\n"
+                                    "hop in between - your ISP, router, any proxy. amipkg\n"
+                                    "fetches over plain HTTP, and an unsigned catalog can\n"
+                                    "be altered on the way to you. The archive checksums\n"
+                                    "do not help: they live inside that same catalog.\n\n"
+                                    "Ask the repo owner for their public key if they have one.\n\n"
+                                    "Add it as an UNSIGNED repository anyway?"))
+                        break;
+                }
+                rc = arepo_add(&g_repos, sid, surl, (skey && skey[0]) ? skey : NULL);
+                if (rc == 5) {
+                    MUI_Request(app, win_repoadd, 0, (char *)"Add a Repository", (char *)"_OK",
+                        (char *)"That does not look like a base64 public key.");
+                    break;
+                }
+                if (rc != 0 || arepo_save(&g_repos) != 0) {
+                    MUI_Request(app, win_repoadd, 0, (char *)"Add a Repository", (char *)"_OK",
+                        (char *)"Could not add that repository.");
+                    break;
+                }
+                set(win_repoadd, MUIA_Window_Open, FALSE);
+                repo_relist();
+                repo_changed();
+                break;
+            }
+            case ID_REPO_REMOVE: {
+                LONG a = -1;
+                get(lst_repo, MUIA_List_Active, &a);
+                if (a < 0 || (size_t)a >= g_repos.count) break;
+                if (!MUI_Request(app, win_repo, 0, (char *)"Remove Repository",
+                        (char *)"_Remove|*_Cancel",
+                        (char *)"Remove this repository from the list?\n\n"
+                                "Packages already installed from it stay\n"
+                                "installed; only the source goes away."))
+                    break;
+                arepo_remove(&g_repos, g_repos.v[a].id);
+                if (arepo_save(&g_repos) == 0) repo_changed();
+                repo_relist();
+                break;
+            }
+            case ID_REPO_TOGGLE: {
+                LONG a = -1;
+                get(lst_repo, MUIA_List_Active, &a);
+                if (a < 0 || (size_t)a >= g_repos.count) break;
+                arepo_set_enabled(&g_repos, g_repos.v[a].id, !g_repos.v[a].enabled);
+                if (arepo_save(&g_repos) == 0) repo_changed();
+                repo_relist();
+                set(lst_repo, MUIA_List_Active, a);
+                break;
+            }
+            case ID_REPO_UP:
+            case ID_REPO_DOWN: {
+                LONG a = -1;
+                int delta = (rid == ID_REPO_UP) ? -1 : 1;
+                get(lst_repo, MUIA_List_Active, &a);
+                if (a < 0 || (size_t)a >= g_repos.count) break;
+                if (a + delta < 0 || (size_t)(a + delta) >= g_repos.count) break;
+                arepo_move(&g_repos, g_repos.v[a].id, delta);
+                if (arepo_save(&g_repos) == 0) repo_changed();
+                repo_relist();
+                set(lst_repo, MUIA_List_Active, a + delta);
+                break;
+            }
             case ID_SUBMIT:
                 set(win_sub, MUIA_Window_Open, TRUE);
                 set(win_sub, MUIA_Window_ActiveObject, (ULONG)str_sub_id);

@@ -31,6 +31,7 @@
 #include "../core/ajson.h"
 #include "../core/store.h"   /* read_file, sha256_of_file, load_installed, load_files_for, paths */
 #include "../core/averify.h" /* on-device Ed25519 verify of the fetched index */
+#include "../core/arepo.h"   /* the repository list (multi-repo) */
 #include "../core/adfread.h" /* extract packages distributed as a raw .adf image */
 
 #include <stdio.h>
@@ -60,6 +61,7 @@ int amipkg_extract_single_top_dir(const char *extract_dir);
 int amipkg_extract_nonempty(const char *extract_dir);
 void amipkg_selfupdate_mirror(char (*paths)[256], size_t n);
 void amipkg_ensure_dirs(void);
+void amipkg_make_dir(const char *path);       /* create one drawer (multi-repo) */
 long long amipkg_volume_free(const char *path);   /* -1 = unknown (don't block) */
 int amipkg_rename(const char *from, const char *to);   /* dos Rename; 0 = ok */
 long amipkg_run_inline_script(const char *script, const char *label);
@@ -126,6 +128,12 @@ static size_t amipkg_run_recipe(const arecipe *rc, const char *e, const char *b,
                                 char (*o)[256], size_t m)
 { (void)rc; (void)e; (void)b; (void)o; (void)m;
   printf("amipkg: install is Amiga-only in the host build\n"); return 0; }
+/* Superseded on the Amiga side by the _recorded variant; kept as a stub so the
+ * two builds declare the same surface. Unreferenced in the host build, hence
+ * the attribute (the suite is -Werror). */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static size_t amipkg_install_generic(const char *e, const char *d, char (*o)[256], size_t m)
 { (void)e; (void)d; (void)o; (void)m; return 0; }
 static size_t amipkg_install_generic_recorded(const char *e, const char *d, const char *i,
@@ -148,6 +156,7 @@ static int amipkg_ks_version(void) { return 0; }
 /* adf_extract (portable) is linked from adfread.c; provide its mkdir hook. */
 #include <sys/stat.h>
 int adf_mkdir(const char *path) { mkdir(path, 0777); return 0; }
+static void amipkg_make_dir(const char *p) { mkdir(p, 0777); }
 #endif
 
 /* Find the packages[] entry object with `id` in a parsed index tree. */
@@ -166,19 +175,51 @@ static const aj_node *find_entry_obj_by_id(const aj_node *root, const char *id)
  * unchanged too (host build is for logic testing only). */
 #define receipt_path(p) (p)
 
+/* The catalog every command works against: all ENABLED repos merged in
+ * priority order (see arepo_load_merged). With one repo configured - the
+ * default - this is exactly the old single-catalog behaviour. */
 static int load_index(aidx_index *idx)
 {
-    char *text = read_file(amipkg_data_path("packages.json"));
-    int rc;
-    if (!text) {
+    if (arepo_load_merged(idx) != 0) {
         printf("amipkg: no catalog at %s\n", amipkg_data_path("packages.json"));
         printf("Bring your network up and run:  amipkg update\n");
         return 1;
     }
-    rc = aidx_parse(text, idx);
-    free(text);
-    if (rc != 0) printf("amipkg: seeded index is unreadable (error %d)\n", rc);
-    return rc;
+    return 0;
+}
+
+/* Where a package came from, for display. "" (a standalone-parsed index)
+ * reads as the official repo. */
+static const char *entry_repo(const aidx_entry *e)
+{
+    return (e && e->repo[0]) ? e->repo : AREPO_OFFICIAL_ID;
+}
+
+/* Load the index a package SPEC should be resolved against, and hand back the
+ * bare id.
+ *
+ *   "ibrowse"          -> the merged view; repo priority already picked a winner
+ *   "mystuff:ibrowse"  -> ONLY that repo, so a package shadowed by a
+ *                         higher-priority repo can still be asked for by name
+ *
+ * Returns 0 on success. Free the index with aidx_free either way. */
+static int load_index_for_spec(const char *spec, aidx_index *idx, char *id_out, size_t n)
+{
+    char repo[AREPO_ID_MAX];
+    if (arepo_split_spec(spec ? spec : "", repo, sizeof repo, id_out, n)) {
+        arepo_list l;
+        arepo_load(&l);
+        if (arepo_find(&l, repo) < 0) {
+            printf("amipkg: no repository called '%s'. Try 'amipkg repo'.\n", repo);
+            return 1;
+        }
+        if (arepo_load_one(repo, idx) != 0) {
+            printf("amipkg: '%s' has no catalog yet - run 'amipkg update'.\n", repo);
+            return 1;
+        }
+        return 0;
+    }
+    return load_index(idx);
 }
 
 /* ------------------------------------------------------------------ */
@@ -234,12 +275,23 @@ static int cmd_info(const char *id)
     aidx_index idx;
     const aidx_entry *e;
     size_t i;
-    if (load_index(&idx) != 0) return 10;
+    char bare[128];
+    if (load_index_for_spec(id, &idx, bare, sizeof bare) != 0) return 10;
+    id = bare;
     e = aidx_find(&idx, id);
     if (!e) { printf("amipkg: '%s' is not in the index.\n", id); aidx_free(&idx); return 5; }
     printf("%s - %s (%s)\n", e->id, e->name, e->category);
     if (e->description[0]) printf("  %s\n", e->description);
     printf("  version: %s\n", e->version);
+    {   /* Provenance matters once repos can shadow each other - but stay quiet
+         * in the single-repo default, where it would just be noise. */
+        arepo_list rl; arepo_load(&rl);
+        if (rl.count > 1) {
+            int at = arepo_find(&rl, entry_repo(e));
+            printf("  repo: %s%s\n", entry_repo(e),
+                   (at >= 0 && !arepo_is_signed(&rl.v[at])) ? " (UNSIGNED)" : "");
+        }
+    }
     if (e->added[0]) printf("  added: %s\n", e->added);
     if (e->dep_count) {
         printf("  needs:");
@@ -314,19 +366,31 @@ static int cmd_avail(const char *filter)
  * verify the Ed25519 signature against the baked public key ON-DEVICE, and only
  * then replace the seeded AMIPKG:packages.json. This is what lets an online
  * Amiga pick up newly-published packages without a rebuild. */
-static int cmd_update(void)
+/* Update ONE repository. `e` carries the url and (for a signed repo) the
+ * pinned key. Returns 0 on success, nonzero on any failure - the caller keeps
+ * going so one dead mirror cannot block the others. */
+static int update_one_repo(const arepo_entry *e)
 {
-    const char *base = getenv("AMIPKG_REPO_URL");
+    const char *base = e->url;
     char url[512];
     char *json = NULL, *sig = NULL;
     long bytes = 0;
-    size_t jl, sl;
+    size_t jl, sl = 0;
     FILE *out;
     char jnew[320]; strcpy(jnew, amipkg_data_path("cache/packages.json.new"));
     char snew[320]; strcpy(snew, amipkg_data_path("cache/packages.json.sig.new"));
-    if (!base || !base[0]) base = AMIPKG_UPDATE_BASE;
+    char dest[320], sdest[320], dir[320];
 
-    printf("Updating catalog from %s ...\n", base);
+    arepo_catalog_path(e->id, dest, sizeof dest);
+    arepo_sig_path(e->id, sdest, sizeof sdest);
+    arepo_dir_path(e->id, dir, sizeof dir);
+    /* repos/ must exist before repos/<id>/. Harmless for the official repo,
+     * whose "dir" is the already-present prefix root. */
+    { char parent[320]; snprintf(parent, sizeof parent, "%srepos", amipkg_prefix());
+      amipkg_make_dir(parent); }
+    amipkg_make_dir(dir);
+
+    printf("Updating '%s' from %s ...\n", e->id, base);
     /* Cache-buster: plain-HTTP intermediaries (router/ISP) may serve the
      * index stale for minutes after a publish (Cache-Control max-age on
      * the endpoint). A unique query defeats every cache in the path.
@@ -342,35 +406,210 @@ static int cmd_update(void)
     if (!(out = fopen(jnew, "wb"))) { printf("amipkg: cannot write %s\n", jnew); return 10; }
     if (http_get(url, out, &bytes) != 0) { fclose(out); remove(jnew); return 10; }
     fclose(out);
-    snprintf(url, sizeof url, "%s/packages.json.sig?t=%lu", base, stamp);
-    if (!(out = fopen(snew, "wb"))) { printf("amipkg: cannot write cache\n"); remove(jnew); return 10; }
-    if (http_get(url, out, &bytes) != 0) { fclose(out); remove(jnew); remove(snew); return 10; }
-    fclose(out);
+    /* An UNSIGNED repo has no .sig to fetch - the user accepted that when they
+     * added it. A SIGNED repo must produce one or nothing is installed. */
+    if (arepo_is_signed(e)) {
+        snprintf(url, sizeof url, "%s/packages.json.sig?t=%lu", base, stamp);
+        if (!(out = fopen(snew, "wb"))) { printf("amipkg: cannot write cache\n"); remove(jnew); return 10; }
+        if (http_get(url, out, &bytes) != 0) { fclose(out); remove(jnew); remove(snew); return 10; }
+        fclose(out);
+        sig = read_file(snew);
+        if (!sig) { printf("amipkg: could not read the signature.\n"); goto fail; }
+        sl = strlen(sig);
+        while (sl && (sig[sl-1] == '\n' || sig[sl-1] == '\r' || sig[sl-1] == ' ' || sig[sl-1] == '\t'))
+            sig[--sl] = '\0';
+    }
 
     json = read_file(jnew);
-    sig  = read_file(snew);
-    if (!json || !sig) { printf("amipkg: could not read the download.\n"); goto fail; }
+    if (!json) { printf("amipkg: could not read the download.\n"); goto fail; }
     jl = strlen(json);                       /* JSON is text (no NUL) -> exact byte length */
-    sl = strlen(sig);
-    while (sl && (sig[sl-1] == '\n' || sig[sl-1] == '\r' || sig[sl-1] == ' ' || sig[sl-1] == '\t'))
-        sig[--sl] = '\0';
 
-    if (!amipkg_verify_index((const unsigned char *)json, jl, sig)) {
-        printf("amipkg: SIGNATURE DID NOT VERIFY - keeping the current catalog.\n");
-        goto fail;
+    if (arepo_is_signed(e)) {
+        /* Verified against THIS repo's pinned key - not the project key. A
+         * signature from another repo must not vouch for this one. */
+        if (!amipkg_verify_index_key((const unsigned char *)json, jl, sig, e->key)) {
+            printf("amipkg: '%s' SIGNATURE DID NOT VERIFY - keeping the current catalog.\n", e->id);
+            goto fail;
+        }
     }
-    /* Verified: install it as the new seeded index (+ keep the .sig alongside). */
-    if (!(out = fopen(amipkg_data_path("packages.json"), "wb"))) { printf("amipkg: cannot write %s\n", amipkg_data_path("packages.json")); goto fail; }
+
+    /* Sanity-check before overwriting a good catalog with rubbish: a truncated
+     * or HTML error page must not replace a working index. */
+    {
+        aidx_index probe;
+        memset(&probe, 0, sizeof probe);
+        if (aidx_parse(json, &probe) != 0 || probe.count == 0) {
+            printf("amipkg: '%s' sent an unreadable catalog - keeping the current one.\n", e->id);
+            aidx_free(&probe);
+            goto fail;
+        }
+        aidx_free(&probe);
+    }
+
+    if (!(out = fopen(dest, "wb"))) { printf("amipkg: cannot write %s\n", dest); goto fail; }
     fwrite(json, 1, jl, out); fclose(out);
-    if ((out = fopen(amipkg_data_path("packages.json.sig"), "wb"))) { fwrite(sig, 1, sl, out); fclose(out); }
+    if (sig && sl) { if ((out = fopen(sdest, "wb"))) { fwrite(sig, 1, sl, out); fclose(out); } }
+    else remove(sdest);                      /* unsigned: leave no stale sig */
     remove(jnew); remove(snew);
     free(json); free(sig);
-    printf("Catalog updated + signature verified. Run 'amipkg avail' to see it.\n");
+    if (arepo_is_signed(e)) printf("  '%s' updated + signature verified.\n", e->id);
+    else                    printf("  '%s' updated (UNSIGNED - not verified).\n", e->id);
     return 0;
 fail:
     free(json); free(sig);
     remove(jnew); remove(snew);
     return 10;
+}
+
+/* `amipkg update` - refresh every ENABLED repository. One failure does not
+ * abort the rest; the exit code reflects whether ANY repo updated. */
+static int cmd_update(void)
+{
+    arepo_list l;
+    size_t i;
+    int ok = 0, failed = 0;
+    const char *override = getenv("AMIPKG_REPO_URL");
+
+    arepo_load(&l);
+
+    /* Back-compat: AMIPKG_REPO_URL used to point the single-repo client at a
+     * different mirror. Keep honouring it, for the official repo only. */
+    if (override && override[0]) {
+        int at = arepo_find(&l, AREPO_OFFICIAL_ID);
+        if (at >= 0 && arepo_url_valid(override) == 0) {
+            strncpy(l.v[at].url, override, sizeof l.v[at].url - 1);
+            l.v[at].url[sizeof l.v[at].url - 1] = '\0';
+        }
+    }
+
+    for (i = 0; i < l.count; i++) {
+        if (!l.v[i].enabled) { printf("Skipping '%s' (disabled).\n", l.v[i].id); continue; }
+        if (update_one_repo(&l.v[i]) == 0) ok++;
+        else { failed++; printf("  '%s' could not be updated.\n", l.v[i].id); }
+    }
+
+    if (ok == 0) {
+        printf("amipkg: no repository could be updated.\n");
+        return 10;
+    }
+    if (failed) printf("Updated %d repo(s); %d failed. Run 'amipkg avail' to see the catalog.\n", ok, failed);
+    else        printf("Updated %d repo(s). Run 'amipkg avail' to see the catalog.\n", ok);
+    return 0;
+}
+
+/* ------------------------------------------------------- repo management */
+
+static void repo_print_list(const arepo_list *l)
+{
+    size_t i;
+    printf("Repositories (order is PRIORITY - the first to provide a package wins):\n\n");
+    for (i = 0; i < l->count; i++) {
+        const arepo_entry *e = &l->v[i];
+        printf("%2d. %-16s %-9s %s\n", (int)(i + 1), e->id,
+               e->enabled ? "enabled" : "DISABLED",
+               arepo_is_signed(e) ? "signed" : "UNSIGNED");
+        printf("    %s\n", e->url);
+    }
+    printf("\n%lu repo(s).\n", (unsigned long)l->count);
+}
+
+/* Ask once before adding a repo with no key. This is the ONE place the
+ * unsigned decision is made, so spell out what it actually costs: without a
+ * signature the catalog can be rewritten in transit, and the SHA-256 pins do
+ * NOT save you because they live inside the very catalog that was rewritten.
+ * So it is not only the operator being trusted - it is the network path. */
+static int confirm_unsigned(const char *id, const char *url)
+{
+    int c, first;
+    printf("\n'%s' has no public key, so its catalog will NOT be verified.\n", id);
+    printf("  %s\n\n", url);
+    printf("That means trusting the person running it AND every hop in between\n");
+    printf("(your ISP, router, any proxy) - amipkg fetches over plain HTTP and\n");
+    printf("an unsigned catalog can be altered on the way to you. The archive\n");
+    printf("checksums do not help here: they live inside that same catalog.\n\n");
+    printf("Ask the repo owner for their public key if they have one.\n\n");
+    printf("Add '%s' as an UNSIGNED repository anyway? (y/N) ", id);
+    fflush(stdout);
+    first = c = getchar();
+    while (c != '\n' && c != EOF) c = getchar();       /* drain the line */
+    return (first == 'y' || first == 'Y');
+}
+
+static void repo_usage(void)
+{
+    printf("amipkg repo                      list configured repositories\n");
+    printf("amipkg repo add <id> <url> [key] add one (no key = unsigned, asks first)\n");
+    printf("amipkg repo remove <id>          remove one\n");
+    printf("amipkg repo enable <id>          include it again\n");
+    printf("amipkg repo disable <id>         keep it configured but ignore it\n");
+    printf("amipkg repo up|down <id>         change PRIORITY (first match wins)\n");
+    printf("\nA repo's <url> is the drawer holding packages.json (and, when\n");
+    printf("signed, packages.json.sig). The key is base64, as published by the\n");
+    printf("repo owner. Install a specific repo's build with  repo:package\n");
+}
+
+static int cmd_repo(int argc, char **argv)
+{
+    arepo_list l;
+    const char *sub = (argc >= 3) ? argv[2] : "list";
+    const char *id  = (argc >= 4) ? argv[3] : NULL;
+    int rc;
+
+    arepo_load(&l);
+
+    if (strcmp(sub, "list") == 0) { repo_print_list(&l); return 0; }
+
+    if (strcmp(sub, "add") == 0) {
+        const char *url = (argc >= 5) ? argv[4] : NULL;
+        const char *key = (argc >= 6) ? argv[5] : NULL;
+        if (!id || !url) { repo_usage(); return 20; }
+        if (arepo_id_valid(id) != 0) {
+            printf("amipkg: '%s' is not a valid repo name (use letters, digits, - and _).\n", id);
+            return 20;
+        }
+        if (arepo_url_valid(url) != 0) {
+            printf("amipkg: '%s' is not a valid URL (needs http:// or https://).\n", url);
+            return 20;
+        }
+        if (arepo_find(&l, id) >= 0) { printf("amipkg: a repo called '%s' already exists.\n", id); return 20; }
+        if (!key || !key[0]) {
+            if (!confirm_unsigned(id, url)) { printf("Not added.\n"); return 5; }
+        }
+        rc = arepo_add(&l, id, url, key);
+        if (rc == 5) { printf("amipkg: that does not look like a base64 public key.\n"); return 20; }
+        if (rc == 1) { printf("amipkg: the repo list is full (max %d).\n", AREPO_MAX); return 20; }
+        if (rc != 0) { printf("amipkg: could not add '%s' (error %d).\n", id, rc); return 20; }
+        if (arepo_save(&l) != 0) { printf("amipkg: could not save the repo list.\n"); return 10; }
+        printf("Added '%s' (%s), lowest priority.\n", id, (key && key[0]) ? "signed" : "UNSIGNED");
+        printf("Run 'amipkg update' to fetch its catalog.\n");
+        return 0;
+    }
+
+    if (!id) { repo_usage(); return 20; }
+
+    if (strcmp(sub, "remove") == 0) {
+        if (arepo_remove(&l, id) != 0) { printf("amipkg: no repo called '%s'.\n", id); return 20; }
+        if (arepo_save(&l) != 0) { printf("amipkg: could not save the repo list.\n"); return 10; }
+        printf("Removed '%s'. Its cached catalog is left in repos/%s.\n", id, id);
+        return 0;
+    }
+    if (strcmp(sub, "enable") == 0 || strcmp(sub, "disable") == 0) {
+        int on = (strcmp(sub, "enable") == 0);
+        if (arepo_set_enabled(&l, id, on) != 0) { printf("amipkg: no repo called '%s'.\n", id); return 20; }
+        if (arepo_save(&l) != 0) { printf("amipkg: could not save the repo list.\n"); return 10; }
+        printf("'%s' is now %s.\n", id, on ? "enabled" : "disabled");
+        return 0;
+    }
+    if (strcmp(sub, "up") == 0 || strcmp(sub, "down") == 0) {
+        int delta = (strcmp(sub, "up") == 0) ? -1 : 1;
+        if (arepo_move(&l, id, delta) != 0) { printf("amipkg: no repo called '%s'.\n", id); return 20; }
+        if (arepo_save(&l) != 0) { printf("amipkg: could not save the repo list.\n"); return 10; }
+        repo_print_list(&l);
+        return 0;
+    }
+
+    repo_usage();
+    return 20;
 }
 
 static const char *basename_of(const char *url)
@@ -443,7 +682,9 @@ static int cmd_fetch(const char *id)
     const aidx_entry *e;
     char dest[256];
     int rc;
-    if (load_index(&idx) != 0) return 10;
+    char bare[128];
+    if (load_index_for_spec(id, &idx, bare, sizeof bare) != 0) return 10;
+    id = bare;
     e = aidx_find(&idx, id);
     if (!e) { printf("amipkg: '%s' not in the index.\n", id); aidx_free(&idx); return 5; }
     rc = fetch_verified(e, dest, sizeof dest);
@@ -727,7 +968,11 @@ static int cmd_install2(const char *id, int dry)
     long dl_bytes = 0;
     int rc = 0, installed_count = 0;
 
-    if (load_index(&idx) != 0) return 10;
+    {   /* "repo:id" forces one repository; a bare id uses repo priority. */
+        static char bare[128];
+        if (load_index_for_spec(id, &idx, bare, sizeof bare) != 0) return 10;
+        id = bare;
+    }
     e = aidx_find(&idx, id);
     if (!e) { printf("amipkg: '%s' not in the index.\n", id); aidx_free(&idx); return 5; }
     if (entry_build_only(e)) {
@@ -1320,11 +1565,12 @@ static int dispatch(int argc, char **argv)
     int rc = 5;
     if (argc < 2) {
         printf("amipkg " AMIPKG_VERSION " - the AmigaPKG package manager\n");
-        printf("usage: amipkg update | list | avail [term] | check | doctor | info <id> | fetch <id> | install <id> [DRYRUN] | submit <id> <url> [CAT=<Category>] [desc] | adopt <id> <drawer> [<ver>] | upgrade [<id>] | dir [<path>] | verify <file> <sha256> | remove <id> [FORCE]\n");
+        printf("usage: amipkg update | list | avail [term] | check | doctor | info <id> | fetch <id> | install <id> [DRYRUN] | submit <id> <url> [CAT=<Category>] [desc] | adopt <id> <drawer> [<ver>] | upgrade [<id>] | repo ... | dir [<path>] | verify <file> <sha256> | remove <id> [FORCE]\n");
         return 5;
     }
     amipkg_ensure_dirs();   /* create AMIPKG:cache + db + config drawers if absent */
     if (strcmp(argv[1], "update") == 0) rc = cmd_update();
+    else if (strcmp(argv[1], "repo") == 0) rc = cmd_repo(argc, argv);
     else if (strcmp(argv[1], "upgrade") == 0) rc = cmd_upgrade(argc >= 3 ? argv[2] : NULL);
     else if (strcmp(argv[1], "dir") == 0) rc = cmd_dir(argc >= 3 ? argv[2] : NULL);
     else if (strcmp(argv[1], "list") == 0) rc = cmd_list();

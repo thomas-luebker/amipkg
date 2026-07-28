@@ -33,18 +33,35 @@ cp "$HERE/Install" "$HERE/Install-System" "$HERE/ReadMe" "$HERE/amipkg.guide" "$
 python3 "$HERE/mkprojicon.py" "$STAGE/amipkg-gui.info" "$STAGE/Install.info" IconX
 python3 "$HERE/mkprojicon.py" "$STAGE/amipkg-gui.info" "$STAGE/Install-System.info" IconX
 
-( cd "$STAGE" && python3 "$HERE/mklha.py" "$OUT" \
-    amipkg amipkg-gui amipkg-gui.info amipkg-mui amipkg-mui.info \
-    amipkg.guide packages.json packages.json.sig \
-    Install Install.info Install-System Install-System.info ReadMe )
+# Native lh5 encoder when the AmigaDiskCLI is built (deterministic via the
+# fixed epoch; ~half the download size); mklha.py (stored lh0) as fallback.
+DISKCLI="${AMIGA_DISK_CLI:-$HOME/Development/AmigaImager/AmigaDiskKit/.build/release/AmigaDiskCLI}"
+LHA_EPOCH=1784894400   # 2026-07-24 12:00 UTC, mklha.py parity
+if [ -x "$DISKCLI" ] && [ -z "${AMIPKG_BUNDLE_STORE:-}" ]; then
+    "$DISKCLI" lha create "$OUT" "$STAGE" --epoch "$LHA_EPOCH"
+else
+    ( cd "$STAGE" && python3 "$HERE/mklha.py" "$OUT" \
+        amipkg amipkg-gui amipkg-gui.info amipkg-mui amipkg-mui.info \
+        amipkg.guide packages.json packages.json.sig \
+        Install Install.info Install-System Install-System.info ReadMe )
+fi
 
 # The SELF-UPDATE / release asset: binaries only, NO catalog. (The catalog
 # carries this archive's sha256 — including the catalog would make the hash
 # self-referential. The amipkg package entry's placeFile recipe installs
 # these into the AMIPKG: home drawer.)
 CLIENT="$(dirname "$OUT")/amipkg-client.lha"
-( cd "$STAGE" && python3 "$HERE/mklha.py" "$CLIENT" \
-    amipkg amipkg-gui amipkg-gui.info amipkg-mui amipkg-mui.info amipkg.guide )
+if [ -x "$DISKCLI" ] && [ -z "${AMIPKG_BUNDLE_STORE:-}" ]; then
+    CSTAGE="$(dirname "$STAGE")/AmiPKG-client"
+    mkdir -p "$CSTAGE"
+    for f in amipkg amipkg-gui amipkg-gui.info amipkg-mui amipkg-mui.info amipkg.guide; do
+        cp "$STAGE/$f" "$CSTAGE/"
+    done
+    "$DISKCLI" lha create "$CLIENT" "$CSTAGE" --epoch "$LHA_EPOCH"
+else
+    ( cd "$STAGE" && python3 "$HERE/mklha.py" "$CLIENT" \
+        amipkg amipkg-gui amipkg-gui.info amipkg-mui amipkg-mui.info amipkg.guide )
+fi
 rm -rf "$(dirname "$STAGE")"
 
 echo "wrote $OUT"

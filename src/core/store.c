@@ -140,10 +140,26 @@ const char *amipkg_prefix(void)
         pr->pr_WindowPtr = oldwin;
     }
 #else
-    strcpy(g_prefix, "AMIPKG:");   /* host build: inert, logic tests only */
+    {
+        /* Host build. Normally inert (logic tests only), but AMIPKG_PREFIX
+         * points it at a scratch directory so the test suite and the host CLI
+         * can exercise the real on-disk config/receipt paths. Amiga builds
+         * never see this - it lives inside the non-__amigaos__ branch. */
+        const char *env = getenv("AMIPKG_PREFIX");
+        if (env && env[0]) {
+            size_t n = strlen(env);
+            snprintf(g_prefix, sizeof g_prefix, "%s%s",
+                     env, (env[n-1] == '/' || env[n-1] == ':') ? "" : "/");
+        } else
+            strcpy(g_prefix, "AMIPKG:");
+    }
 #endif
     return g_prefix;
 }
+
+#ifndef __amigaos__
+void amipkg_reset_prefix_for_test(void) { g_prefix[0] = '\0'; }
+#endif
 
 char *amipkg_data_path(const char *rel)
 {

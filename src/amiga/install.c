@@ -173,6 +173,10 @@ static void ensure_one(const char *path)
     { BPTR d = CreateDir((STRPTR)path); if (d) UnLock(d); }
 }
 
+/* Create one drawer if it is missing (multi-repo: repos/ and repos/<id>/ are
+ * made on demand when a repository is first updated). */
+void amipkg_make_dir(const char *path) { ensure_one(path); }
+
 /* Make sure amipkg's working drawers exist before we write to them. The
  * AMIPKG: assign exists after the bridge, but its cache/ and db/ sub-
  * drawers are not guaranteed present on every image - create them here so a

@@ -50,7 +50,11 @@ amipkg adopt <id> <drawer>    take over managing an app you already have
 amipkg remove <id>            receipt-driven clean uninstall
 amipkg doctor                 audit installs against the receipts
 amipkg dir [<path>]           show/set the install drawer
+amipkg repo                   list / add / remove repositories
 ```
+
+Install a specific repository's build with `repo:package`, e.g.
+`amipkg install mystuff:ibrowse`.
 
 ## Building from source
 
@@ -73,12 +77,39 @@ same source always produces the same SHA-256).
 - `vendor/` — build-time headers only (MUI 3.8 developer kit, AmiSSL SDK);
   see the READMEs there for provenance and licenses.
 
+## Host your own repository
+
+amipkg installs from **more than one repository**, and anyone can run one. A
+repository is just two static files on any web server — `packages.json` and its
+signature. No database, no PHP, no HTTPS required.
+
+```
+amipkg repo add mystuff http://your.host/amiga <public-key>
+amipkg update
+```
+
+Repositories are consulted in order and the first one that has a package wins,
+so `amipkg repo up`/`down` decides what you get; `amipkg info` shows which
+repository anything came from. Dependencies resolve across repositories.
+
+Signing your repo takes about a minute and gives your users exactly the same
+guarantee as the official catalog — `tools/amipkg-repo-sign` makes a keypair
+and signs, with no dependencies beyond Python 3. Unsigned repositories are
+allowed too; amipkg explains the trade-off and asks once.
+
+**→ [HOSTING.md](HOSTING.md)** walks through both paths.
+
 ## Trust model
 
 See [SECURITY.md](https://github.com/thomas-luebker/amiga-pkg/blob/main/SECURITY.md)
 in the catalog repo. Short version: the signing key lives offline; the
 catalog carries the signature; the Amiga verifies it locally; archives are
 pinned by SHA-256. Security contact: **thomas@amiga-imager.com**.
+
+Each repository is verified against **its own** pinned public key, so one
+repository's signature can never vouch for another's catalog. An unsigned
+repository is opt-in per repo and stays labelled as such everywhere it appears
+— see [HOSTING.md](HOSTING.md) for what that costs and why.
 
 ## Part of the Amiga Imager project
 

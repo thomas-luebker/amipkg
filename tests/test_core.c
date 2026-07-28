@@ -17,10 +17,15 @@
 #include "../src/core/arecipe.h"
 #include "../src/core/arun.h"
 #include "../src/core/ajson.h"
+#include "../src/core/arepo.h"
+/* NOT store.h: it declares a non-static read_file, which collides with this
+ * file's own static helper of the same name. Only the test hook is needed. */
+void amipkg_reset_prefix_for_test(void);
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 static int failures = 0;
 #define CHECK(cond, msg) do { \
@@ -364,6 +369,135 @@ static void test_prepost_script(void)
     ajson_free(root);
 }
 
+/* ---------------------------------------------------------------- arepo */
+
+/* The repo list is the trust boundary for multi-repo: a bad id becomes a path
+ * component, and a dropped key silently downgrades a repo to unsigned. Both
+ * are covered here, not just the happy path. */
+static void test_arepo(void)
+{
+    arepo_list l;
+    char repo[64], id[64], path[320];
+    int at;
+
+    /* --- id validation is a SECURITY check: the id becomes a path component */
+    CHECK(arepo_id_valid("mystuff") == 0, "repo id: plain accepted");
+    CHECK(arepo_id_valid("my-stuff_2") == 0, "repo id: dash/underscore ok");
+    CHECK(arepo_id_valid("") != 0, "repo id: empty rejected");
+    CHECK(arepo_id_valid("..") != 0, "repo id: dotdot rejected");
+    CHECK(arepo_id_valid("a/b") != 0, "repo id: slash rejected");
+    CHECK(arepo_id_valid("SYS:") != 0, "repo id: colon rejected");
+    CHECK(arepo_id_valid("a b") != 0, "repo id: space rejected");
+
+    /* --- url validation */
+    CHECK(arepo_url_valid("http://example.org/repo") == 0, "url: http ok");
+    CHECK(arepo_url_valid("https://example.org/repo") == 0, "url: https ok");
+    CHECK(arepo_url_valid("ftp://example.org") != 0, "url: ftp rejected");
+    CHECK(arepo_url_valid("http://") != 0, "url: bare scheme rejected");
+    CHECK(arepo_url_valid("") != 0, "url: empty rejected");
+
+    /* --- repo:id specs */
+    CHECK(arepo_split_spec("mystuff:ibrowse", repo, sizeof repo, id, sizeof id) == 1,
+          "spec: qualified detected");
+    CHECK(strcmp(repo, "mystuff") == 0 && strcmp(id, "ibrowse") == 0, "spec: split correctly");
+    CHECK(arepo_split_spec("ibrowse", repo, sizeof repo, id, sizeof id) == 0,
+          "spec: bare id");
+    CHECK(strcmp(id, "ibrowse") == 0 && repo[0] == '\0', "spec: bare leaves repo empty");
+    CHECK(arepo_split_spec("x:", repo, sizeof repo, id, sizeof id) == 0, "spec: trailing colon is bare");
+    CHECK(arepo_split_spec(":x", repo, sizeof repo, id, sizeof id) == 0, "spec: leading colon is bare");
+
+    /* --- in-memory list ops */
+    memset(&l, 0, sizeof l);
+    l.count = 1;
+    strcpy(l.v[0].id, "official");
+    strcpy(l.v[0].url, AMIPKG_OFFICIAL_URL);
+    strcpy(l.v[0].key, AMIPKG_OFFICIAL_PUBKEY);
+    l.v[0].enabled = 1;
+
+    CHECK(arepo_add(&l, "mystuff", "http://example.org/r", NULL) == 0, "add: unsigned ok");
+    CHECK(arepo_add(&l, "mystuff", "http://other.org/r", NULL) == 3, "add: duplicate rejected");
+    CHECK(arepo_add(&l, "bad/id", "http://example.org/r", NULL) == 2, "add: bad id rejected");
+    CHECK(arepo_add(&l, "ok2", "gopher://x", NULL) == 4, "add: bad url rejected");
+    CHECK(arepo_add(&l, "ok3", "http://example.org/r", "not-a-key") == 5, "add: bad key rejected");
+    CHECK(arepo_add(&l, "signed1", "http://example.org/s", AMIPKG_OFFICIAL_PUBKEY) == 0,
+          "add: signed ok");
+
+    at = arepo_find(&l, "MYSTUFF");
+    CHECK(at == 1, "find: case-insensitive");
+    CHECK(!arepo_is_signed(&l.v[at]), "unsigned repo reports unsigned");
+    CHECK(arepo_is_signed(&l.v[arepo_find(&l, "signed1")]), "signed repo reports signed");
+
+    /* order is priority: moving changes which repo wins a bare id */
+    CHECK(arepo_move(&l, "signed1", -1) == 0, "move: up ok");
+    CHECK(arepo_find(&l, "signed1") == 1, "move: signed1 now ahead of mystuff");
+    CHECK(arepo_move(&l, "signed1", -99) == 0, "move: clamps at top");
+    CHECK(arepo_find(&l, "signed1") == 0, "move: clamped to first");
+    CHECK(arepo_move(&l, "nope", -1) == 1, "move: unknown reported");
+
+    CHECK(arepo_set_enabled(&l, "mystuff", 0) == 0, "disable ok");
+    CHECK(l.v[arepo_find(&l, "mystuff")].enabled == 0, "disable took effect");
+    CHECK(arepo_remove(&l, "mystuff") == 0, "remove ok");
+    CHECK(arepo_find(&l, "mystuff") < 0, "remove took effect");
+    CHECK(arepo_remove(&l, "mystuff") == 1, "remove: second time reported");
+
+    /* --- paths: official keeps the LEGACY top-level path (no migration) */
+    arepo_catalog_path("official", path, sizeof path);
+    CHECK(strstr(path, "repos/") == NULL && strstr(path, "packages.json") != NULL,
+          "path: official uses the legacy root catalog");
+    arepo_catalog_path("mystuff", path, sizeof path);
+    CHECK(strstr(path, "repos/mystuff/packages.json") != NULL,
+          "path: other repos live under repos/<id>/");
+    arepo_sig_path("mystuff", path, sizeof path);
+    CHECK(strstr(path, "repos/mystuff/packages.json.sig") != NULL, "path: per-repo sig");
+
+    /* --- save/load round-trip against a real scratch dir */
+    {
+        const char *dir = "build/t-repo";
+        arepo_list back;
+        mkdir("build", 0755);
+        mkdir(dir, 0755);
+        mkdir("build/t-repo/config", 0755);
+        setenv("AMIPKG_PREFIX", dir, 1);
+        amipkg_reset_prefix_for_test();
+
+        remove("build/t-repo/config/repos");
+        arepo_load(&back);
+        CHECK(back.count == 1 && strcmp(back.v[0].id, "official") == 0,
+              "load: missing config yields the official default");
+        CHECK(arepo_is_signed(&back.v[0]), "load: default official is signed");
+
+        CHECK(arepo_save(&l) == 0, "save ok");
+        arepo_load(&back);
+        CHECK(back.count == l.count, "round-trip: count preserved");
+        CHECK(strcmp(back.v[0].id, l.v[0].id) == 0, "round-trip: order preserved");
+        CHECK(strcmp(back.v[0].key, l.v[0].key) == 0, "round-trip: key preserved");
+        CHECK(strcmp(back.v[back.count-1].url, l.v[l.count-1].url) == 0,
+              "round-trip: url preserved");
+
+        /* A hand-mangled key must degrade to UNSIGNED, never be trusted as-is. */
+        {
+            FILE *f = fopen("build/t-repo/config/repos", "wb");
+            CHECK(f != NULL, "write hand-edited list");
+            if (f) {
+                fprintf(f, "1 good %s http://example.org/g\n", AMIPKG_OFFICIAL_PUBKEY);
+                fprintf(f, "1 mangled AAAAtruncatedkey http://example.org/m\n");
+                fprintf(f, "0 off - http://example.org/o\n");
+                fprintf(f, "# a comment\n\n");
+                fprintf(f, "1 bad/id - http://example.org/x\n");
+                fclose(f);
+            }
+            arepo_load(&back);
+            CHECK(back.count == 3, "load: comment/blank skipped, bad id line dropped");
+            CHECK(arepo_is_signed(&back.v[0]), "load: good key kept");
+            CHECK(!arepo_is_signed(&back.v[1]), "load: malformed key degrades to UNSIGNED");
+            CHECK(back.v[2].enabled == 0, "load: disabled flag read");
+        }
+
+        unsetenv("AMIPKG_PREFIX");
+        amipkg_reset_prefix_for_test();
+    }
+}
+
 int main(void)
 {
     test_sha256();
@@ -374,6 +508,7 @@ int main(void)
     test_recipe();
     test_prepost_script();
     test_arun();
+    test_arepo();
     if (failures == 0) {
         printf("amipkg core: ALL TESTS PASSED\n");
         return 0;

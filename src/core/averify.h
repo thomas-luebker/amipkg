@@ -18,4 +18,11 @@
 int amipkg_verify_index(const unsigned char *msg, size_t msglen,
                         const char *sig_base64);
 
+/* Same, against an ARBITRARY base64 public key - the multi-repo path, where
+ * each repository is verified against the key the user pinned when adding it.
+ * Returns 0 (not verified) for a NULL/empty/malformed key: an unsigned repo
+ * must go down a deliberate caller-side path, never fall out of a key check. */
+int amipkg_verify_index_key(const unsigned char *msg, size_t msglen,
+                            const char *sig_base64, const char *pubkey_base64);
+
 #endif /* AMIPKG_AVERIFY_H */

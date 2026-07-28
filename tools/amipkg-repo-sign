@@ -1,0 +1,268 @@
+#!/usr/bin/env python3
+"""
+amipkg-repo-sign - keys and signatures for your own amipkg repository.
+
+    amipkg-repo-sign keygen  <name>              make a keypair
+    amipkg-repo-sign sign    <key.secret> <packages.json>
+    amipkg-repo-sign verify  <pubkey-b64> <packages.json>
+    amipkg-repo-sign pubkey  <key.secret>        print the public key again
+
+Signing your repository is what lets people install from it safely. amipkg
+verifies the signature ON THE AMIGA before it will use a catalog, so even
+though the download happens over plain HTTP, nobody between you and your users
+can alter what they install.
+
+Without a signature, users get a warning and must opt in, because an unsigned
+catalog can be rewritten in transit - and the archive checksums do NOT save
+them, since those live inside the very catalog that was rewritten.
+
+NO DEPENDENCIES. Ed25519 is implemented here against the Python standard
+library only (RFC 8032), so this runs anywhere Python 3 does - no pip, no
+OpenSSL (macOS ships LibreSSL, which has no Ed25519 at all).
+
+THE SECRET KEY IS THE WHOLE THING. Anyone holding it can publish packages that
+your users' machines will accept without question. Keep it off the web server
+that hosts the repo, and back it up somewhere you would not lose.
+"""
+
+import base64
+import hashlib
+import os
+import sys
+
+# ------------------------------------------------------------------ Ed25519
+# Reference implementation (RFC 8032 / ed25519.cr.yp.to), public domain.
+# Kept small and readable on purpose: this is the one piece of cryptography a
+# repo owner runs, so it should be auditable at a glance.
+
+q = 2 ** 255 - 19
+l = 2 ** 252 + 27742317777372353535851937790883648493
+
+
+def _H(m):
+    return hashlib.sha512(m).digest()
+
+
+def _inv(x):
+    return pow(x, q - 2, q)
+
+
+d = -121665 * _inv(121666) % q
+I = pow(2, (q - 1) // 4, q)
+
+
+def _xrecover(y):
+    xx = (y * y - 1) * _inv(d * y * y + 1)
+    x = pow(xx, (q + 3) // 8, q)
+    if (x * x - xx) % q != 0:
+        x = (x * I) % q
+    if x % 2 != 0:
+        x = q - x
+    return x
+
+
+By = 4 * _inv(5) % q
+B = [_xrecover(By) % q, By, 1, _xrecover(By) * By % q]
+ident = [0, 1, 1, 0]
+
+
+def _add(P, Q):
+    A = (P[1] - P[0]) * (Q[1] - Q[0]) % q
+    Bb = (P[1] + P[0]) * (Q[1] + Q[0]) % q
+    C = 2 * P[3] * Q[3] * d % q
+    D = 2 * P[2] * Q[2] % q
+    E, F, G, Hh = Bb - A, D - C, D + C, Bb + A
+    return [E * F % q, G * Hh % q, F * G % q, E * Hh % q]
+
+
+def _mul(P, e):
+    if e == 0:
+        return ident
+    Q = _mul(P, e // 2)
+    Q = _add(Q, Q)
+    if e & 1:
+        Q = _add(Q, P)
+    return Q
+
+
+def _encodepoint(P):
+    x, y = P[0] * _inv(P[2]) % q, P[1] * _inv(P[2]) % q
+    bits = [(y >> i) & 1 for i in range(255)] + [x & 1]
+    return bytes(sum(bits[i * 8 + j] << j for j in range(8)) for i in range(32))
+
+
+def _clamp(h32):
+    a = int.from_bytes(h32, "little")
+    a &= (1 << 254) - 8            # clear low 3 bits, clear bit 255
+    a |= 1 << 254                  # set bit 254
+    return a
+
+
+def publickey(secret: bytes) -> bytes:
+    h = _H(secret)
+    return _encodepoint(_mul(B, _clamp(h[:32])))
+
+
+def signature(msg: bytes, secret: bytes, pub: bytes) -> bytes:
+    h = _H(secret)
+    a = _clamp(h[:32])
+    r = int.from_bytes(_H(h[32:64] + msg), "little") % l
+    R = _encodepoint(_mul(B, r))
+    k = int.from_bytes(_H(R + pub + msg), "little") % l
+    S = (r + k * a) % l
+    return R + S.to_bytes(32, "little")
+
+
+# --------------------------------------------------------------- verify side
+def _isoncurve(P):
+    x, y, z, t = P
+    return (z % q != 0 and x * y % q == z * t % q
+            and (y * y - x * x - z * z - d * t * t) % q == 0)
+
+
+def _decodepoint(s):
+    y = int.from_bytes(s, "little") & ((1 << 255) - 1)
+    x = _xrecover(y)
+    if x & 1 != (s[31] >> 7) & 1:
+        x = q - x
+    P = [x, y, 1, x * y % q]
+    if not _isoncurve(P):
+        raise ValueError("point is not on the curve")
+    return P
+
+
+def checkvalid(sig: bytes, msg: bytes, pub: bytes) -> bool:
+    if len(sig) != 64 or len(pub) != 32:
+        return False
+    try:
+        R = _decodepoint(sig[:32])
+        A = _decodepoint(pub)
+    except ValueError:
+        return False
+    S = int.from_bytes(sig[32:], "little")
+    if S >= l:
+        return False
+    k = int.from_bytes(_H(sig[:32] + pub + msg), "little") % l
+    lhs, rhs = _mul(B, S), _add(R, _mul(A, k))
+    return (_encodepoint(lhs) == _encodepoint(rhs))
+
+
+# -------------------------------------------------------------------- CLI
+
+def b64(data: bytes) -> str:
+    return base64.b64encode(data).decode("ascii")
+
+
+def die(msg, code=1):
+    print("amipkg-repo-sign: " + msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def cmd_keygen(argv):
+    if len(argv) != 1:
+        die("usage: amipkg-repo-sign keygen <name>")
+    name = argv[0]
+    secret_path = name + ".secret"
+    if os.path.exists(secret_path):
+        die("%s already exists - refusing to overwrite a signing key" % secret_path)
+
+    secret = os.urandom(32)
+    pub = publickey(secret)
+
+    # 0600 from the moment it exists, not after.
+    fd = os.open(secret_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(b64(secret) + "\n")
+    with open(name + ".public", "w") as f:
+        f.write(b64(pub) + "\n")
+
+    print("Secret key : %s   (KEEP THIS PRIVATE - never put it on the web server)" % secret_path)
+    print("Public key : %s" % (name + ".public"))
+    print()
+    print("Your public key is:")
+    print()
+    print("    " + b64(pub))
+    print()
+    print("Publish that string. Your users add your repo with:")
+    print()
+    print("    amipkg repo add %s http://your.host/path %s" % (name, b64(pub)))
+    print()
+
+
+def _load_secret(path):
+    try:
+        with open(path) as f:
+            secret = base64.b64decode(f.read().strip())
+    except Exception as exc:
+        die("cannot read secret key %s (%s)" % (path, exc))
+    if len(secret) != 32:
+        die("%s does not look like an amipkg secret key" % path)
+    return secret
+
+
+def cmd_sign(argv):
+    if len(argv) != 2:
+        die("usage: amipkg-repo-sign sign <key.secret> <packages.json>")
+    secret = _load_secret(argv[0])
+    index_path = argv[1]
+    try:
+        with open(index_path, "rb") as f:
+            msg = f.read()
+    except Exception as exc:
+        die("cannot read %s (%s)" % (index_path, exc))
+
+    pub = publickey(secret)
+    sig = signature(msg, secret, pub)
+    if not checkvalid(sig, msg, pub):          # never ship an unverified signature
+        die("internal error: produced a signature that does not verify")
+
+    out = index_path + ".sig"
+    with open(out, "w") as f:
+        f.write(b64(sig) + "\n")
+    print("Signed %s (%d bytes)" % (index_path, len(msg)))
+    print("Wrote  %s" % out)
+    print()
+    print("Upload BOTH files. Re-sign every time the catalog changes -")
+    print("a stale signature makes the catalog fail to verify on the Amiga.")
+
+
+def cmd_verify(argv):
+    if len(argv) != 2:
+        die("usage: amipkg-repo-sign verify <pubkey-b64> <packages.json>")
+    try:
+        pub = base64.b64decode(argv[0])
+    except Exception:
+        die("that does not look like a base64 public key")
+    if len(pub) != 32:
+        die("a public key is 32 bytes (44 base64 characters)")
+    with open(argv[1], "rb") as f:
+        msg = f.read()
+    try:
+        with open(argv[1] + ".sig") as f:
+            sig = base64.b64decode(f.read().strip())
+    except Exception as exc:
+        die("cannot read %s.sig (%s)" % (argv[1], exc))
+
+    if checkvalid(sig, msg, pub):
+        print("OK: %s verifies against that public key." % argv[1])
+    else:
+        die("SIGNATURE DOES NOT VERIFY - do not publish this pair.", 2)
+
+
+def cmd_pubkey(argv):
+    if len(argv) != 1:
+        die("usage: amipkg-repo-sign pubkey <key.secret>")
+    print(b64(publickey(_load_secret(argv[0]))))
+
+
+def main():
+    cmds = {"keygen": cmd_keygen, "sign": cmd_sign,
+            "verify": cmd_verify, "pubkey": cmd_pubkey}
+    if len(sys.argv) < 2 or sys.argv[1] not in cmds:
+        print(__doc__.strip())
+        sys.exit(0 if len(sys.argv) < 2 else 1)
+    cmds[sys.argv[1]](sys.argv[2:])
+
+
+if __name__ == "__main__":
+    main()

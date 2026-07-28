@@ -18,7 +18,7 @@ LDFLAGS = -s -lgcc
 
 CORE = src/core/sha256.c src/core/aver.c src/core/receipts.c \
        src/core/ajson.c src/core/aindex.c src/core/resolve.c src/core/arecipe.c src/core/arun.c \
-       src/core/store.c
+       src/core/store.c src/core/arepo.c
 # Every binary embeds AMIPKG_VERSION etc. from the headers — a bump that only
 # touches store.h MUST relink everything (the 0.5.4 release shipped a 0.5.3
 # CLI because this dependency was missing).
