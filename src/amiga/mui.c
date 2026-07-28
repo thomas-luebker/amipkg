@@ -73,6 +73,7 @@ enum {
     ID_UPDATE = 1, ID_CHECK, ID_UPALL, ID_INFO, ID_INSTALL, ID_RUN,
     ID_REMOVE, ID_REFRESH, ID_SETDIR, ID_ABOUT, ID_ADOPT, ID_DOCS, ID_SUBMIT,
     ID_SUBMIT_GO,
+    ID_MUIPREFS,
     ID_REPOS, ID_REPO_ADD, ID_REPO_ADDGO, ID_REPO_REMOVE, ID_REPO_TOGGLE,
     ID_REPO_UP, ID_REPO_DOWN,
     ID_VIEW, ID_CAT, ID_SORT, ID_FIND, ID_SELECT, ID_DCLICK
@@ -959,11 +960,11 @@ static int build_app(void)
 
 #ifndef NO_MENUS
         MUIA_Application_Menustrip, (ULONG)(MenustripObject,
-            MUIA_Family_Child, MenuObjectT("Project"),
+            MUIA_Family_Child, MenuObjectT("amipkg"),
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"About...",
+                    MUIA_Menuitem_Shortcut, (ULONG)"?",
                     MUIA_UserData, ID_ABOUT, End,
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Documentation...",
-                    MUIA_Menuitem_Shortcut, (ULONG)"?",
                     MUIA_UserData, ID_DOCS, End,
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Quit",
                     MUIA_Menuitem_Shortcut, (ULONG)"Q",
@@ -997,12 +998,19 @@ static int build_app(void)
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Refresh",
                     MUIA_Menuitem_Shortcut, (ULONG)"F",
                     MUIA_UserData, ID_REFRESH, End,
+            End,
+            MUIA_Family_Child, MenuObjectT("Settings"),
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Install Drawer...",
                     MUIA_Menuitem_Shortcut, (ULONG)"D",
                     MUIA_UserData, ID_SETDIR, End,
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Repositories...",
                     MUIA_Menuitem_Shortcut, (ULONG)"E",
                     MUIA_UserData, ID_REPOS, End,
+                /* separator: NM_BARLABEL is (STRPTR)-1, and gadtools.h is not
+                 * pulled in here - MUI takes the value directly. */
+                MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)-1, End,
+                MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"MUI...",
+                    MUIA_UserData, ID_MUIPREFS, End,
             End,
         End),
 #endif
@@ -1057,12 +1065,12 @@ static int build_app(void)
                     Child, VGroup,
                         /* search / sort row */
                         Child, HGroup,
-                            Child, Label2("Find"),
+                            Child, Label2("Find:"),
                             Child, str_find = StringObject, StringFrame,
                                 MUIA_String_MaxLen, 63,
                                 MUIA_CycleChain, 1,
                             End,
-                            Child, Label2("Sort"),
+                            Child, Label2("Sort:"),
                             Child, cyc_sort = CycleObject, MUIA_HorizWeight, 0,
                                 MUIA_Cycle_Entries, (ULONG)g_sortlabels,
                                 MUIA_CycleChain, 1,
@@ -1125,23 +1133,23 @@ static int build_app(void)
                         "signs every submission before it reaches the catalog.",
                 End,
                 Child, ColGroup(2),
-                    Child, Label2("Package id"),
+                    Child, Label2("Package id:"),
                     Child, str_sub_id = StringObject, StringFrame,
                         MUIA_String_MaxLen, 33,
                         MUIA_String_Accept, (ULONG)"abcdefghijklmnopqrstuvwxyz0123456789-",
                         MUIA_CycleChain, 1,
                     End,
-                    Child, Label2("Archive URL"),
+                    Child, Label2("Archive URL:"),
                     Child, str_sub_url = StringObject, StringFrame,
                         MUIA_String_MaxLen, 255,
                         MUIA_CycleChain, 1,
                     End,
-                    Child, Label2("Description"),
+                    Child, Label2("Description:"),
                     Child, str_sub_desc = StringObject, StringFrame,
                         MUIA_String_MaxLen, 159,
                         MUIA_CycleChain, 1,
                     End,
-                    Child, Label2("Category"),
+                    Child, Label2("Category:"),
                     Child, cyc_sub_cat = CycleObject,
                         MUIA_Cycle_Entries, (ULONG)g_sub_catlabels,
                         MUIA_CycleChain, 1,
@@ -1194,19 +1202,19 @@ static int build_app(void)
                         "Leave the key empty only if the repo is unsigned.",
                 End,
                 Child, ColGroup(2),
-                    Child, Label2("Name"),
+                    Child, Label2("Name:"),
                     Child, str_repo_id = StringObject, StringFrame,
                         MUIA_String_MaxLen, AREPO_ID_MAX,
                         MUIA_String_Accept, (ULONG)"abcdefghijklmnopqrstuvwxyz"
                                                   "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_",
                         MUIA_CycleChain, 1,
                     End,
-                    Child, Label2("URL"),
+                    Child, Label2("URL:"),
                     Child, str_repo_url = StringObject, StringFrame,
                         MUIA_String_MaxLen, AREPO_URL_MAX,
                         MUIA_CycleChain, 1,
                     End,
-                    Child, Label2("Public key"),
+                    Child, Label2("Public key:"),
                     Child, str_repo_key = StringObject, StringFrame,
                         MUIA_String_MaxLen, AREPO_KEY_MAX,
                         MUIA_CycleChain, 1,
@@ -1463,6 +1471,11 @@ static int gui_run(void)
             case ID_REMOVE:  action_remove(); break;
             case ID_SETDIR:  action_set_dir(); break;
             case ID_ADOPT:   action_adopt(); break;
+            case ID_MUIPREFS:
+                /* Every app should offer the local MUI settings. Stock method,
+                 * so this adds no class dependency. */
+                DoMethod(app, MUIM_Application_OpenConfigWindow, 0);
+                break;
             case ID_REPOS:
                 repo_relist();
                 set(win_repo, MUIA_Window_Open, TRUE);

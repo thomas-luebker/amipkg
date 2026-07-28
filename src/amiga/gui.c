@@ -83,11 +83,12 @@ enum { GID_VIEW = 1, GID_LIST, GID_CHECK, GID_INFO, GID_INSTALL, GID_REMOVE, GID
        GID_CAT, GID_SORT, GID_ADOPT };
 
 /* Menu numbering (must match g_newmenu below). */
-enum { MENU_PROJECT = 0, MENU_PACKAGE = 1 };
-enum { PROJ_ABOUT = 0, PROJ_DOCS = 1, PROJ_QUIT = 3 };  /* item 2 is the bar */
+/* Menu/item numbers are POSITIONAL - they must track g_newmenu exactly. */
+enum { MENU_APP = 0, MENU_PACKAGE = 1, MENU_SETTINGS = 2 };
+enum { APP_ABOUT = 0, APP_DOCS = 1, APP_QUIT = 3 };     /* item 2 is the bar */
 enum { PKG_UPDATECAT = 0, PKG_CHECK = 1, PKG_UPGRADE = 2, PKG_INFO = 3, PKG_INSTALL = 4,
-       PKG_ADOPT = 5, PKG_SUBMIT = 6, PKG_REMOVE = 7, PKG_REFRESH = 8,
-       PKG_SETDIR = 10, PKG_REPOS = 11 };   /* item 9 = bar */
+       PKG_ADOPT = 5, PKG_SUBMIT = 6, PKG_REMOVE = 7, PKG_REFRESH = 8 };
+enum { SET_DIR = 0, SET_REPOS = 1 };
 
 /* View modes. */
 enum { VIEW_INSTALLED = 0, VIEW_AVAILABLE = 1 };
@@ -136,9 +137,12 @@ static struct Screen *g_scr = NULL;
 static char           g_statusbuf[160];
 
 static struct NewMenu g_newmenu[] = {
-    { NM_TITLE, (STRPTR)"Project",       NULL,        0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"About...",      NULL,        0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Documentation...", (STRPTR)"?", 0, 0, NULL },
+    /* "Project" is for apps that load/save project files; amipkg has none, so
+     * the menu carries the app name (MorphOS/MUI Style Guide). Kept identical
+     * to amipkg-mui's menustrip - the two front-ends must not drift. */
+    { NM_TITLE, (STRPTR)"amipkg",        NULL,        0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"About...",      (STRPTR)"?", 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Documentation...", NULL,     0, 0, NULL },
     { NM_ITEM,  (STRPTR)NM_BARLABEL,     NULL,        0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Quit",          (STRPTR)"Q", 0, 0, NULL },
     { NM_TITLE, (STRPTR)"Package",       NULL,        0, 0, NULL },
@@ -151,7 +155,7 @@ static struct NewMenu g_newmenu[] = {
     { NM_ITEM,  (STRPTR)"Submit a Package...", NULL,  0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Remove",        (STRPTR)"R", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Refresh",       (STRPTR)"F", 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)NM_BARLABEL,     NULL,        0, 0, NULL },
+    { NM_TITLE, (STRPTR)"Settings",      NULL,        0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Install Drawer...", (STRPTR)"D", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Repositories...", (STRPTR)"E", 0, 0, NULL },
     { NM_END,   NULL,                    NULL,        0, 0, NULL },
@@ -862,21 +866,21 @@ static void submit_form(void)
 
     ng.ng_LeftEdge = 8 + labelW; ng.ng_TopEdge = y;
     ng.ng_Width = fieldW; ng.ng_Height = rowH;
-    ng.ng_GadgetText = (UBYTE *)"Package id"; ng.ng_Flags = PLACETEXT_LEFT;
+    ng.ng_GadgetText = (UBYTE *)"Package id:"; ng.ng_Flags = PLACETEXT_LEFT;
     ng.ng_GadgetID = SG_ID;
     gad = g_id = CreateGadget(STRING_KIND, gad, &ng, GTST_MaxChars, 32, TAG_END);
     y += rowH + gap;
 
-    ng.ng_TopEdge = y; ng.ng_GadgetText = (UBYTE *)"Archive URL"; ng.ng_GadgetID = SG_URL;
+    ng.ng_TopEdge = y; ng.ng_GadgetText = (UBYTE *)"Archive URL:"; ng.ng_GadgetID = SG_URL;
     gad = g_url = CreateGadget(STRING_KIND, gad, &ng, GTST_MaxChars, 254, TAG_END);
     y += rowH + gap;
 
-    ng.ng_TopEdge = y; ng.ng_GadgetText = (UBYTE *)"Description"; ng.ng_GadgetID = SG_DESC;
+    ng.ng_TopEdge = y; ng.ng_GadgetText = (UBYTE *)"Description:"; ng.ng_GadgetID = SG_DESC;
     gad = g_desc = CreateGadget(STRING_KIND, gad, &ng, GTST_MaxChars, 158, TAG_END);
     y += rowH + gap;
 
     ng.ng_TopEdge = y; ng.ng_Width = 180;
-    ng.ng_GadgetText = (UBYTE *)"Category"; ng.ng_GadgetID = SG_CAT;
+    ng.ng_GadgetText = (UBYTE *)"Category:"; ng.ng_GadgetID = SG_CAT;
     gad = g_cat = CreateGadget(CYCLE_KIND, gad, &ng,
                                GTCY_Labels, (ULONG)cats, GTCY_Active, 0, TAG_END);
     ng.ng_Width = fieldW;
@@ -975,16 +979,16 @@ static int repo_add_form(arepo_list *l)
 
     ng.ng_LeftEdge = 8 + labelW; ng.ng_TopEdge = y;
     ng.ng_Width = fieldW; ng.ng_Height = rowH;
-    ng.ng_GadgetText = (UBYTE *)"Name"; ng.ng_Flags = PLACETEXT_LEFT;
+    ng.ng_GadgetText = (UBYTE *)"Name:"; ng.ng_Flags = PLACETEXT_LEFT;
     ng.ng_GadgetID = RG_ID;
     gad = g_id = CreateGadget(STRING_KIND, gad, &ng, GTST_MaxChars, AREPO_ID_MAX - 1, TAG_END);
     y += rowH + gap;
 
-    ng.ng_TopEdge = y; ng.ng_GadgetText = (UBYTE *)"URL"; ng.ng_GadgetID = RG_URL;
+    ng.ng_TopEdge = y; ng.ng_GadgetText = (UBYTE *)"URL:"; ng.ng_GadgetID = RG_URL;
     gad = g_url = CreateGadget(STRING_KIND, gad, &ng, GTST_MaxChars, AREPO_URL_MAX - 2, TAG_END);
     y += rowH + gap;
 
-    ng.ng_TopEdge = y; ng.ng_GadgetText = (UBYTE *)"Public key"; ng.ng_GadgetID = RG_KEY;
+    ng.ng_TopEdge = y; ng.ng_GadgetText = (UBYTE *)"Public key:"; ng.ng_GadgetID = RG_KEY;
     gad = g_key = CreateGadget(STRING_KIND, gad, &ng, GTST_MaxChars, AREPO_KEY_MAX - 2, TAG_END);
     y += rowH + gap + gap;
 
@@ -1524,7 +1528,7 @@ static struct Gadget *build_gadgets(void)
     memset(&ng, 0, sizeof ng);
     ng.ng_LeftEdge = wleft + UI_MARGIN + 44; ng.ng_TopEdge = findY;
     ng.ng_Width = UI_LV_W - 44; ng.ng_Height = findH;
-    ng.ng_GadgetText = (UBYTE *)"Find"; ng.ng_Flags = PLACETEXT_LEFT;
+    ng.ng_GadgetText = (UBYTE *)"Find:"; ng.ng_Flags = PLACETEXT_LEFT;
     ng.ng_TextAttr = ta; ng.ng_VisualInfo = g_vi; ng.ng_GadgetID = GID_SEARCH;
     gad = CreateGadget(STRING_KIND, gad, &ng,
                        GTST_String, (ULONG)g_filter, GTST_MaxChars, (ULONG)(sizeof g_filter - 1),
@@ -1697,13 +1701,13 @@ static void close_ui(void)
 
 static int dispatch_menu(UWORD menuNum, UWORD itemNum)
 {
-    if (menuNum == MENU_PROJECT) {
-        if (itemNum == PROJ_ABOUT) action_about();
-        else if (itemNum == PROJ_DOCS) {
+    if (menuNum == MENU_APP) {
+        if (itemNum == APP_ABOUT) action_about();
+        else if (itemNum == APP_DOCS) {
             open_docs();
             set_status("Opening the documentation (MultiView)...");
         }
-        else if (itemNum == PROJ_QUIT) return 1;
+        else if (itemNum == APP_QUIT) return 1;
     } else if (menuNum == MENU_PACKAGE) {
         if (itemNum == PKG_UPDATECAT) action_update_catalog();
         else if (itemNum == PKG_CHECK) action_check();
@@ -1712,10 +1716,11 @@ static int dispatch_menu(UWORD menuNum, UWORD itemNum)
         else if (itemNum == PKG_INSTALL) action_install();
         else if (itemNum == PKG_ADOPT) action_adopt();
         else if (itemNum == PKG_SUBMIT) submit_form();
-        else if (itemNum == PKG_REPOS) repo_manager();
         else if (itemNum == PKG_REMOVE) action_remove();
         else if (itemNum == PKG_REFRESH) action_refresh();
-        else if (itemNum == PKG_SETDIR) action_set_dir();
+    } else if (menuNum == MENU_SETTINGS) {
+        if (itemNum == SET_DIR) action_set_dir();
+        else if (itemNum == SET_REPOS) repo_manager();
     }
     return 0;
 }
