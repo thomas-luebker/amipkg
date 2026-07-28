@@ -1,7 +1,7 @@
-Short:        Package manager for AmigaOS 3.x (signed catalog)
+Short:        Package manager for AmigaOS 3.x
 Author:       thomas@amiga-imager.com (Thomas Luebker)
 Uploader:     thomas@amiga-imager.com (Thomas Luebker)
-Type:         util/pack
+Type:         util/sys
 Version:      0.6.0
 Architecture: m68k-amigaos >= 3.0
 Distribution: Aminet
