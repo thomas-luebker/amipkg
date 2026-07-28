@@ -100,7 +100,10 @@ static char g_filter[64] = "";
 
 static Object *app, *win, *lv, *lst, *str_find, *cyc_sort;
 static Object *lv_view, *lst_view, *lv_cats, *lst_cats;
-static Object *win_sub, *str_sub_id, *str_sub_url, *str_sub_desc, *bt_sub_go, *bt_sub_cancel;
+static Object *win_sub, *str_sub_id, *str_sub_url, *str_sub_desc, *cyc_sub_cat, *bt_sub_go, *bt_sub_cancel;
+static const char *g_sub_catlabels[] = { "Utilities", "Games", "Internet", "Audio",
+    "Text", "Network", "Graphics", "Development", "Libraries", "Emulation",
+    "System", NULL };
 static Object *txt_status, *txt_progress, *txt_desc, *txt_counts;
 static Object *bt_update, *bt_check, *bt_upall, *bt_info, *bt_install,
               *bt_run, *bt_remove, *bt_adopt, *bt_refresh;
@@ -766,11 +769,20 @@ static void action_run(void)
     {
         char drawer[256], b[300];
         BPTR fh;
-        static char script[600];
+        static char script[900];
         size_t dl = (size_t)(strlen(best) - strlen(bestname));
         if (dl >= sizeof drawer) dl = sizeof drawer - 1;
         memcpy(drawer, best, dl); drawer[dl] = 0;
-        snprintf(script, sizeof script, "CD \"%s\"\nRun >NIL: \"%s\"\n", drawer, bestname);
+        /* Execute the binary DIRECTLY in the (already asynchronous) script -
+         * no inner Run - with a combined <> redirection to an AUTO console:
+         * GUI apps never touch stdio, so no window appears; CONSOLE apps
+         * (MCAmiga XPE report - "Run does nothing") get a real interactive
+         * window that stays until closed. Stack 100000 covers ports that
+         * assume a big-stack icon launch (default 4K would crash them). */
+        snprintf(script, sizeof script,
+                 "FailAt 9999\nStack 100000\nCD \"%s\"\n"
+                 "\"%s\" <> \"CON:40/40/620/360/%.40s (amipkg Run)/AUTO/CLOSE/WAIT\"\n",
+                 drawer, bestname, bestname);
         fh = Open((STRPTR)"RAM:amipkg-mui-run.script", MODE_NEWFILE);
         if (!fh) { set_status("Could not write the RAM: launch script."); return; }
         Write(fh, script, (LONG)strlen(script));
@@ -1077,6 +1089,11 @@ static int build_app(void)
                         MUIA_String_MaxLen, 159,
                         MUIA_CycleChain, 1,
                     End,
+                    Child, Label2("Category"),
+                    Child, cyc_sub_cat = CycleObject,
+                        MUIA_Cycle_Entries, (ULONG)g_sub_catlabels,
+                        MUIA_CycleChain, 1,
+                    End,
                 End,
                 Child, TextObject, MUIA_Text_Contents,
                     (ULONG)"\033iExample URL: http://aminet.net/util/wb/SwazInfo18b.lha\033n",
@@ -1326,8 +1343,11 @@ static int gui_run(void)
                 if (g_busy) { set_status("An operation is already running."); break; }
                 {
                     static char cmd[700], verb[48];
-                    snprintf(cmd, sizeof cmd, "%s submit %s \"%s\" \"%s\"",
-                             cli_path(), sid, surl, sdesc && sdesc[0] ? sdesc : "");
+                    ULONG catn = 0;
+                    get(cyc_sub_cat, MUIA_Cycle_Active, &catn);
+                    snprintf(cmd, sizeof cmd, "%s submit %s \"%s\" CAT=%s \"%s\"",
+                             cli_path(), sid, surl, g_sub_catlabels[catn],
+                             sdesc && sdesc[0] ? sdesc : "");
                     snprintf(verb, sizeof verb, "Submission of '%s'", sid);
                     set(win_sub, MUIA_Window_Open, FALSE);
                     set_status("Submitting for review...");

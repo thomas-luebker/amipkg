@@ -109,7 +109,9 @@ fi
 
 # --- 5. re-pin (versioned URL — never releases/latest) -----------------------
 cd "$PKGREPO"
-git pull -q --rebase
+# A dirty tree here aborted the 0.6.2 run mid-release - autostash keeps
+# unrelated local edits out of the way instead of failing.
+git pull -q --rebase --autostash
 VER="$VER" SHA="$SHA" SIZE="$SIZE" python3 - <<'PYEOF'
 import json, os
 v, sha, size = os.environ["VER"], os.environ["SHA"], int(os.environ["SIZE"])

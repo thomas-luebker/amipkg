@@ -864,7 +864,12 @@ static void json_escape(const char *in, char *out, size_t outsize)
     out[o] = '\0';
 }
 
-static int cmd_submit(const char *id, const char *url, const char *desc)
+static const char *g_submit_cats[] = {
+    "Utilities", "Games", "Internet", "Audio", "Text", "Network",
+    "Graphics", "Development", "Libraries", "Emulation", "System", NULL };
+
+static int cmd_submit(const char *id, const char *url, const char *cat,
+                      const char *desc)
 {
     static char json[3072], resp[512], hex[65], readme_url[560];
     static char version[48] = "-";
@@ -889,6 +894,34 @@ static int cmd_submit(const char *id, const char *url, const char *desc)
         if (!(ul > 4 && (strcmp(url + ul - 4, ".lha") == 0 || strcmp(url + ul - 4, ".adf") == 0))) {
             printf("amipkg: the client can only install .lha or .adf archives.\n");
             return 5;
+        }
+    }
+    if (cat && cat[0]) {
+        int k, okcat = 0;
+        for (k = 0; g_submit_cats[k]; k++)
+            if (strcmp(cat, g_submit_cats[k]) == 0) okcat = 1;
+        if (!okcat) {
+            printf("amipkg: unknown category '%s'. Known: ", cat);
+            for (k = 0; g_submit_cats[k]; k++)
+                printf("%s%s", k ? ", " : "", g_submit_cats[k]);
+            printf("\n");
+            return 5;
+        }
+    }
+
+    /* Instant feedback for the most common rejection: the id already exists.
+     * Checked against the LOCAL catalog - offline, before any upload. */
+    {
+        aidx_index idx;
+        if (load_index(&idx) == 0) {
+            const aidx_entry *e = aidx_find(&idx, id);
+            aidx_free(&idx);
+            if (e) {
+                printf("amipkg: '%s' is already in the catalog (version %s).\n", id, e->version);
+                printf("New versions are picked up automatically by the nightly refresh -\n");
+                printf("if this is DIFFERENT software, pick another id.\n");
+                return 5;
+            }
         }
     }
 
@@ -934,11 +967,12 @@ static int cmd_submit(const char *id, const char *url, const char *desc)
         json_escape(url, urlesc, sizeof urlesc);
         snprintf(json, sizeof json,
             "{\"id\":\"%s\",\"name\":\"%s\",\"version\":\"%s\","
-            "\"category\":\"Utilities\",\"description\":\"%s\","
+            "\"category\":\"%s\",\"description\":\"%s\","
             "\"archive\":{\"url\":\"%s\",\"sha256\":\"%s\",\"sizeBytes\":%ld},"
             "\"deps\":[],\"requirements\":{},\"tier\":\"A\","
             "\"submittedVia\":\"amipkg " AMIPKG_VERSION " on-Amiga\"}",
-            id, id, veresc, descesc, urlesc, hex, size);
+            id, id, veresc, (cat && cat[0]) ? cat : "Utilities",
+            descesc, urlesc, hex, size);
     }
 
     printf("Submitting %s (%s, %ld bytes, sha %.12s...) for review...\n", id, version, size, hex);
@@ -1228,7 +1262,7 @@ static int dispatch(int argc, char **argv)
     int rc = 5;
     if (argc < 2) {
         printf("amipkg " AMIPKG_VERSION " - the AmigaPKG package manager\n");
-        printf("usage: amipkg update | list | avail [term] | check | doctor | info <id> | fetch <id> | install <id> [DRYRUN] | submit <id> <url> [desc] | adopt <id> <drawer> [<ver>] | upgrade [<id>] | dir [<path>] | verify <file> <sha256> | remove <id> [FORCE]\n");
+        printf("usage: amipkg update | list | avail [term] | check | doctor | info <id> | fetch <id> | install <id> [DRYRUN] | submit <id> <url> [CAT=<Category>] [desc] | adopt <id> <drawer> [<ver>] | upgrade [<id>] | dir [<path>] | verify <file> <sha256> | remove <id> [FORCE]\n");
         return 5;
     }
     amipkg_ensure_dirs();   /* create AMIPKG:cache + db + config drawers if absent */
@@ -1241,12 +1275,17 @@ static int dispatch(int argc, char **argv)
     else if (strcmp(argv[1], "submit") == 0) {
         if (argc < 4) { printf("usage: amipkg submit <id> <archive-url> [description]\n"); rc = 5; }
         else {
-            static char d[512]; int i2; d[0] = 0;
+            static char d[512]; static char cat[32]; int i2;
+            d[0] = 0; cat[0] = 0;
             for (i2 = 4; i2 < argc; i2++) {
+                if (strncmp(argv[i2], "CAT=", 4) == 0) {
+                    strncpy(cat, argv[i2] + 4, sizeof cat - 1); cat[sizeof cat - 1] = 0;
+                    continue;
+                }
                 if (d[0]) strncat(d, " ", sizeof d - strlen(d) - 1);
                 strncat(d, argv[i2], sizeof d - strlen(d) - 1);
             }
-            rc = cmd_submit(argv[2], argv[3], d);
+            rc = cmd_submit(argv[2], argv[3], cat, d);
         }
     }
     else if (strcmp(argv[1], "info") == 0)

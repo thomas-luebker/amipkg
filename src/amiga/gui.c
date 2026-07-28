@@ -833,8 +833,12 @@ static void action_search(struct Gadget *g)
  * other mutation. Modal on purpose - one tiny event loop, no extra state. */
 static void submit_form(void)
 {
+    static const char *cats[] = { "Utilities", "Games", "Internet", "Audio",
+        "Text", "Network", "Graphics", "Development", "Libraries", "Emulation",
+        "System", NULL };
     struct Window *w;
-    struct Gadget *glist = NULL, *gad, *g_id, *g_url, *g_desc;
+    struct Gadget *glist = NULL, *gad, *g_id, *g_url, *g_desc, *g_cat;
+    WORD cat_sel = 0;
     struct NewGadget ng;
     struct TextAttr *ta = g_scr->Font;
     WORD fh = g_scr->RastPort.TxHeight;
@@ -842,7 +846,7 @@ static void submit_form(void)
     WORD top = (WORD)(g_scr->WBorTop + fh + 1) + gap;
     WORD y = top, width, height;
     int done = 0, submit = 0;
-    enum { SG_ID = 1, SG_URL, SG_DESC, SG_GO, SG_CANCEL };
+    enum { SG_ID = 1, SG_URL, SG_DESC, SG_CAT, SG_GO, SG_CANCEL };
 
     if (g_busy) { set_status("An operation is already running."); return; }
 
@@ -863,6 +867,13 @@ static void submit_form(void)
 
     ng.ng_TopEdge = y; ng.ng_GadgetText = (UBYTE *)"Description"; ng.ng_GadgetID = SG_DESC;
     gad = g_desc = CreateGadget(STRING_KIND, gad, &ng, GTST_MaxChars, 158, TAG_END);
+    y += rowH + gap;
+
+    ng.ng_TopEdge = y; ng.ng_Width = 180;
+    ng.ng_GadgetText = (UBYTE *)"Category"; ng.ng_GadgetID = SG_CAT;
+    gad = g_cat = CreateGadget(CYCLE_KIND, gad, &ng,
+                               GTCY_Labels, (ULONG)cats, GTCY_Active, 0, TAG_END);
+    ng.ng_Width = fieldW;
     y += rowH + gap + gap;
 
     ng.ng_LeftEdge = 8 + labelW; ng.ng_TopEdge = y;
@@ -905,6 +916,11 @@ static void submit_form(void)
             else if (cls == IDCMP_GADGETUP && hit) {
                 if (hit->GadgetID == SG_CANCEL) done = 1;
                 else if (hit->GadgetID == SG_GO) { done = 1; submit = 1; }
+                else if (hit->GadgetID == SG_CAT) {
+                    ULONG a = 0;
+                    GT_GetGadgetAttrs(g_cat, w, NULL, GTCY_Active, (ULONG)&a, TAG_END);
+                    cat_sel = (WORD)a;
+                }
             }
         }
     }
@@ -916,8 +932,8 @@ static void submit_form(void)
             req("Submit a Package", "Package id and archive URL are both required.");
         } else {
             static char cmd[700], verb[48];
-            snprintf(cmd, sizeof cmd, "%s submit %s \"%s\" \"%s\"",
-                     cli_path(), sid, surl, sdsc);
+            snprintf(cmd, sizeof cmd, "%s submit %s \"%s\" CAT=%s \"%s\"",
+                     cli_path(), sid, surl, cats[cat_sel], sdsc);
             snprintf(verb, sizeof verb, "Submission of '%s'", sid);
             set_status("Submitting for review...");
             CloseWindow(w); FreeGadgets(glist);
@@ -1103,11 +1119,20 @@ static void action_run(void)
         /* CD into the program's drawer, then Run it detached. */
         char drawer[256], b[300];
         BPTR fh;
-        static char script[600];
+        static char script[900];
         size_t dl = (size_t)(strlen(best) - strlen(bestname));
         if (dl >= sizeof drawer) dl = sizeof drawer - 1;
         memcpy(drawer, best, dl); drawer[dl] = '\0';
-        snprintf(script, sizeof script, "CD \"%s\"\nRun >NIL: \"%s\"\n", drawer, bestname);
+        /* Execute the binary DIRECTLY in the (already asynchronous) script -
+         * no inner Run - with a combined <> redirection to an AUTO console:
+         * GUI apps never touch stdio, so no window appears; CONSOLE apps
+         * (MCAmiga XPE report - "Run does nothing") get a real interactive
+         * window that stays until closed. Stack 100000 covers ports that
+         * assume a big-stack icon launch (default 4K would crash them). */
+        snprintf(script, sizeof script,
+                 "FailAt 9999\nStack 100000\nCD \"%s\"\n"
+                 "\"%s\" <> \"CON:40/40/620/360/%.40s (amipkg Run)/AUTO/CLOSE/WAIT\"\n",
+                 drawer, bestname, bestname);
         fh = Open((STRPTR)"RAM:amipkg-runapp.script", MODE_NEWFILE);
         if (!fh) { set_status("Could not write the RAM: launch script."); return; }
         Write(fh, script, (LONG)strlen(script));
