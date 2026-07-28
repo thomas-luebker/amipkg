@@ -12,7 +12,7 @@ amipkg - install, update and remove software on your Amiga
 
 amipkg is a package manager for classic AmigaOS 3.x - think "apt/Homebrew
 for your Amiga". It installs, updates and removes software from
-a curated catalog of 100+ freely-distributable classics and tools (players,
+a curated catalog of 200+ freely-distributable classics and tools (players,
 commodities, internet apps, dev tools, games), resolved and downloaded
 straight on your Amiga.
 
@@ -31,6 +31,11 @@ FEATURES
    upgrade/remove/update/doctor, DRYRUN preview), a zero-dependency
    GadTools GUI, and a MUI GUI (3.8+) - browse, search, category filter,
    newest-first, one-click install with live progress, Run and Adopt.
+ * MULTIPLE REPOSITORIES: install from the curated catalog, from your
+   club's, or from your own. A repository is two static files on any web
+   server; sign yours and your users get the same on-Amiga verification the
+   official one gets. Order decides which repo wins a package, and
+   `repo:package` asks a specific one. See HOSTING.md in the source repo.
  * Self-updating: `amipkg upgrade amipkg`.
  * Runs on a stock 68000 with AmigaOS 3.0+; guaranteed 128 KB stack via
    StackSwap regardless of your Shell settings.
