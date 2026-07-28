@@ -498,6 +498,120 @@ static void test_arepo(void)
     }
 }
 
+/* ---- arepo: the MERGE ----------------------------------------------------
+ *
+ * This is the heart of multi-repo and the part with real behaviour: priority
+ * order decides who wins an id, shadowed entries must NOT leak into the merged
+ * view, every entry must carry its source repo, and a disabled repo must
+ * vanish entirely. Exercised against catalogs on disk, the way the client
+ * actually reads them.
+ */
+static void write_text_file(const char *path, const char *text)
+{
+    FILE *f = fopen(path, "wb");
+    CHECK(f != NULL, "merge: fixture writable");
+    if (!f) return;
+    fputs(text, f);
+    fclose(f);
+}
+
+/* Minimal catalogs aidx_parse accepts (schema MUST be 1). */
+#define CAT_OFFICIAL "{\"schema\":1,\"indexVersion\":7,\"packages\":[" \
+    "{\"id\":\"alpha\",\"version\":\"1.0\",\"name\":\"Alpha\"}," \
+    "{\"id\":\"shared\",\"version\":\"1.0\",\"name\":\"Shared official\"}]}"
+#define CAT_EXTRA "{\"schema\":1,\"indexVersion\":2,\"packages\":[" \
+    "{\"id\":\"shared\",\"version\":\"9.9\",\"name\":\"Shared extra\"}," \
+    "{\"id\":\"gamma\",\"version\":\"2.0\",\"name\":\"Gamma\"}]}"
+
+static void test_arepo_merge(void)
+{
+    const char *dir = "build/t-merge";
+    aidx_index idx;
+    const aidx_entry *e;
+
+    mkdir("build", 0755);
+    mkdir(dir, 0755);
+    mkdir("build/t-merge/config", 0755);
+    mkdir("build/t-merge/repos", 0755);
+    mkdir("build/t-merge/repos/extra", 0755);
+    setenv("AMIPKG_PREFIX", dir, 1);
+    amipkg_reset_prefix_for_test();
+
+    /* official keeps the LEGACY top-level path; other repos live under repos/ */
+    write_text_file("build/t-merge/packages.json", CAT_OFFICIAL);
+    write_text_file("build/t-merge/repos/extra/packages.json", CAT_EXTRA);
+
+    /* --- official first: it wins the shared id -------------------------- */
+    write_text_file("build/t-merge/config/repos",
+        "1 official - http://example.org/off\n"
+        "1 extra - http://example.org/extra\n");
+    CHECK(arepo_load_merged(&idx) == 0, "merge: loads");
+    CHECK(idx.count == 3, "merge: 2 + 2 with one shadowed = 3 entries");
+    CHECK(idx.index_version == 7, "merge: indexVersion from the top-priority repo");
+    e = aidx_find(&idx, "shared");
+    CHECK(e && strcmp(e->version, "1.0") == 0, "merge: higher-priority repo wins the id");
+    CHECK(e && strcmp(e->repo, "official") == 0, "merge: winner stamped with its repo");
+    e = aidx_find(&idx, "gamma");
+    CHECK(e && strcmp(e->repo, "extra") == 0, "merge: entry only in extra is stamped extra");
+    e = aidx_find(&idx, "alpha");
+    CHECK(e && strcmp(e->repo, "official") == 0, "merge: official entry stamped official");
+    aidx_free(&idx);
+
+    /* --- flip the priority: the SAME id now resolves to the other repo --- */
+    write_text_file("build/t-merge/config/repos",
+        "1 extra - http://example.org/extra\n"
+        "1 official - http://example.org/off\n");
+    CHECK(arepo_load_merged(&idx) == 0, "merge: loads after reorder");
+    CHECK(idx.count == 3, "merge: count stable after reorder");
+    e = aidx_find(&idx, "shared");
+    CHECK(e && strcmp(e->version, "9.9") == 0, "merge: order is priority - extra now wins");
+    CHECK(e && strcmp(e->repo, "extra") == 0, "merge: winner restamped");
+    CHECK(idx.index_version == 2, "merge: indexVersion follows the new top repo");
+    aidx_free(&idx);
+
+    /* --- a disabled repo contributes nothing ---------------------------- */
+    write_text_file("build/t-merge/config/repos",
+        "1 official - http://example.org/off\n"
+        "0 extra - http://example.org/extra\n");
+    CHECK(arepo_load_merged(&idx) == 0, "merge: loads with one disabled");
+    CHECK(idx.count == 2, "merge: disabled repo drops out entirely");
+    CHECK(aidx_find(&idx, "gamma") == NULL, "merge: its exclusive package is gone");
+    e = aidx_find(&idx, "shared");
+    CHECK(e && strcmp(e->version, "1.0") == 0, "merge: shared falls back to official");
+    aidx_free(&idx);
+
+    /* --- a repo with no catalog yet is skipped, not fatal ---------------- */
+    write_text_file("build/t-merge/config/repos",
+        "1 official - http://example.org/off\n"
+        "1 never - http://example.org/never\n");
+    CHECK(arepo_load_merged(&idx) == 0, "merge: unfetched repo does not break the load");
+    CHECK(idx.count == 2, "merge: unfetched repo adds nothing");
+    aidx_free(&idx);
+
+    /* --- arepo_load_one reaches a SHADOWED package ----------------------- */
+    write_text_file("build/t-merge/config/repos",
+        "1 official - http://example.org/off\n"
+        "1 extra - http://example.org/extra\n");
+    CHECK(arepo_load_one("extra", &idx) == 0, "load_one: loads that repo alone");
+    CHECK(idx.count == 2, "load_one: only that repo's entries");
+    e = aidx_find(&idx, "shared");
+    CHECK(e && strcmp(e->version, "9.9") == 0,
+          "load_one: reaches the version the merge shadows (what repo:id needs)");
+    CHECK(e && strcmp(e->repo, "extra") == 0, "load_one: stamps provenance too");
+    aidx_free(&idx);
+    CHECK(arepo_load_one("never", &idx) != 0, "load_one: missing catalog reported");
+    aidx_free(&idx);
+
+    /* --- with NO repos configured at all, the default still resolves ----- */
+    remove("build/t-merge/config/repos");
+    CHECK(arepo_load_merged(&idx) == 0, "merge: default list still finds the official catalog");
+    CHECK(idx.count == 2, "merge: default = the official catalog alone");
+    aidx_free(&idx);
+
+    unsetenv("AMIPKG_PREFIX");
+    amipkg_reset_prefix_for_test();
+}
+
 int main(void)
 {
     test_sha256();
@@ -509,6 +623,7 @@ int main(void)
     test_prepost_script();
     test_arun();
     test_arepo();
+    test_arepo_merge();
     if (failures == 0) {
         printf("amipkg core: ALL TESTS PASSED\n");
         return 0;
