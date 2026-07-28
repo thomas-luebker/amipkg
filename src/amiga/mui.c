@@ -64,6 +64,7 @@ struct Library *UtilityBase = NULL;   /* MUI notification tags use utility */
 enum {
     ID_UPDATE = 1, ID_CHECK, ID_UPALL, ID_INFO, ID_INSTALL, ID_RUN,
     ID_REMOVE, ID_REFRESH, ID_SETDIR, ID_ABOUT, ID_ADOPT, ID_DOCS, ID_SUBMIT,
+    ID_SUBMIT_GO,
     ID_VIEW, ID_CAT, ID_SORT, ID_FIND, ID_SELECT, ID_DCLICK
 };
 
@@ -99,6 +100,7 @@ static char g_filter[64] = "";
 
 static Object *app, *win, *lv, *lst, *str_find, *cyc_sort;
 static Object *lv_view, *lst_view, *lv_cats, *lst_cats;
+static Object *win_sub, *str_sub_id, *str_sub_url, *str_sub_desc, *bt_sub_go, *bt_sub_cancel;
 static Object *txt_status, *txt_progress, *txt_desc, *txt_counts;
 static Object *bt_update, *bt_check, *bt_upall, *bt_info, *bt_install,
               *bt_run, *bt_remove, *bt_adopt, *bt_refresh;
@@ -1047,6 +1049,44 @@ static int build_app(void)
                 End,
             End,
         End,
+
+        SubWindow, win_sub = WindowObject,
+            MUIA_Window_Title, (ULONG)"Submit a Package for Review",
+            MUIA_Window_ID,    MAKE_ID('A','P','K','S'),
+            WindowContents, VGroup,
+                Child, TextObject,
+                    MUIA_Text_Contents, (ULONG)
+                        "Author a catalog entry ON your Amiga. Your machine\n"
+                        "computes the SHA-256 pin; a maintainer reviews and\n"
+                        "signs every submission before it reaches the catalog.",
+                End,
+                Child, ColGroup(2),
+                    Child, Label2("Package id"),
+                    Child, str_sub_id = StringObject, StringFrame,
+                        MUIA_String_MaxLen, 33,
+                        MUIA_String_Accept, (ULONG)"abcdefghijklmnopqrstuvwxyz0123456789-",
+                        MUIA_CycleChain, 1,
+                    End,
+                    Child, Label2("Archive URL"),
+                    Child, str_sub_url = StringObject, StringFrame,
+                        MUIA_String_MaxLen, 255,
+                        MUIA_CycleChain, 1,
+                    End,
+                    Child, Label2("Description"),
+                    Child, str_sub_desc = StringObject, StringFrame,
+                        MUIA_String_MaxLen, 159,
+                        MUIA_CycleChain, 1,
+                    End,
+                End,
+                Child, TextObject, MUIA_Text_Contents,
+                    (ULONG)"\033iExample URL: http://aminet.net/util/wb/SwazInfo18b.lha\033n",
+                End,
+                Child, HGroup,
+                    Child, bt_sub_go     = SimpleButton("_Submit for Review"),
+                    Child, bt_sub_cancel = SimpleButton("_Cancel"),
+                End,
+            End,
+        End,
     End;
     if (!app) return 0;
     trace("build_app: application tree created, wiring notifications");
@@ -1091,6 +1131,12 @@ static int build_app(void)
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_REMOVE);
     DoMethod(bt_adopt,   MUIM_Notify, MUIA_Pressed, FALSE,
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_ADOPT);
+    DoMethod(bt_sub_go,  MUIM_Notify, MUIA_Pressed, FALSE,
+             (ULONG)app, 2, MUIM_Application_ReturnID, ID_SUBMIT_GO);
+    DoMethod(bt_sub_cancel, MUIM_Notify, MUIA_Pressed, FALSE,
+             (ULONG)win_sub, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+    DoMethod(win_sub, MUIM_Notify, MUIA_Window_CloseRequest, TRUE,
+             (ULONG)win_sub, 3, MUIM_Set, MUIA_Window_Open, FALSE);
     trace("build_app: notifications wired");
     return 1;
 }
@@ -1264,15 +1310,30 @@ static int gui_run(void)
             case ID_SETDIR:  action_set_dir(); break;
             case ID_ADOPT:   action_adopt(); break;
             case ID_SUBMIT:
-                MUI_Request(app, win, 0, (char *)"Submit a Package", (char *)"_OK",
-                    "Author a catalog entry ON YOUR AMIGA and send it in\n"
-                    "for review - your machine computes the SHA-256 pin:\n\n"
-                    "    amipkg submit <id> <archive-url> [description]\n\n"
-                    "e.g.  amipkg submit supertool\n"
-                    "        http://aminet.net/util/misc/SuperTool.lha\n\n"
-                    "A maintainer reviews and signs every submission before\n"
-                    "it reaches the catalog. (GUI form planned.)");
+                set(win_sub, MUIA_Window_Open, TRUE);
+                set(win_sub, MUIA_Window_ActiveObject, (ULONG)str_sub_id);
                 break;
+            case ID_SUBMIT_GO: {
+                char *sid = NULL, *surl = NULL, *sdesc = NULL;
+                get(str_sub_id,   MUIA_String_Contents, &sid);
+                get(str_sub_url,  MUIA_String_Contents, &surl);
+                get(str_sub_desc, MUIA_String_Contents, &sdesc);
+                if (!sid || !sid[0] || !surl || !surl[0]) {
+                    MUI_Request(app, win_sub, 0, (char *)"Submit a Package", (char *)"_OK",
+                                "Package id and archive URL are both required.");
+                    break;
+                }
+                if (g_busy) { set_status("An operation is already running."); break; }
+                {
+                    static char cmd[700], verb[48];
+                    snprintf(cmd, sizeof cmd, "%s submit %s \"%s\" \"%s\"",
+                             cli_path(), sid, surl, sdesc && sdesc[0] ? sdesc : "");
+                    snprintf(verb, sizeof verb, "Submission of '%s'", sid);
+                    set(win_sub, MUIA_Window_Open, FALSE);
+                    set_status("Submitting for review...");
+                    run_async(cmd, verb);
+                }
+                break; }
             case ID_ABOUT:   action_about(); break;
             case ID_DOCS:
                 open_docs();

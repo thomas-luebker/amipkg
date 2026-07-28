@@ -828,6 +828,107 @@ static void action_search(struct Gadget *g)
 /* "Adopt Existing..." - the selected catalog package is ALREADY on this
  * system somewhere: pick its drawer, and amipkg takes over managing it
  * (inventory + receipt + in-place upgrades). jdb78's idea. */
+/* Modal "Submit a Package" form: a small GadTools window with id / URL /
+ * description strings. On Submit it shells to `amipkg submit ...` like every
+ * other mutation. Modal on purpose - one tiny event loop, no extra state. */
+static void submit_form(void)
+{
+    struct Window *w;
+    struct Gadget *glist = NULL, *gad, *g_id, *g_url, *g_desc;
+    struct NewGadget ng;
+    struct TextAttr *ta = g_scr->Font;
+    WORD fh = g_scr->RastPort.TxHeight;
+    WORD rowH = fh + 6, gap = 6, labelW = 11 * (fh > 8 ? 8 : 7), fieldW = 340;
+    WORD top = (WORD)(g_scr->WBorTop + fh + 1) + gap;
+    WORD y = top, width, height;
+    int done = 0, submit = 0;
+    enum { SG_ID = 1, SG_URL, SG_DESC, SG_GO, SG_CANCEL };
+
+    if (g_busy) { set_status("An operation is already running."); return; }
+
+    gad = CreateContext(&glist);
+    memset(&ng, 0, sizeof ng);
+    ng.ng_TextAttr = ta; ng.ng_VisualInfo = g_vi;
+
+    ng.ng_LeftEdge = 8 + labelW; ng.ng_TopEdge = y;
+    ng.ng_Width = fieldW; ng.ng_Height = rowH;
+    ng.ng_GadgetText = (UBYTE *)"Package id"; ng.ng_Flags = PLACETEXT_LEFT;
+    ng.ng_GadgetID = SG_ID;
+    gad = g_id = CreateGadget(STRING_KIND, gad, &ng, GTST_MaxChars, 32, TAG_END);
+    y += rowH + gap;
+
+    ng.ng_TopEdge = y; ng.ng_GadgetText = (UBYTE *)"Archive URL"; ng.ng_GadgetID = SG_URL;
+    gad = g_url = CreateGadget(STRING_KIND, gad, &ng, GTST_MaxChars, 254, TAG_END);
+    y += rowH + gap;
+
+    ng.ng_TopEdge = y; ng.ng_GadgetText = (UBYTE *)"Description"; ng.ng_GadgetID = SG_DESC;
+    gad = g_desc = CreateGadget(STRING_KIND, gad, &ng, GTST_MaxChars, 158, TAG_END);
+    y += rowH + gap + gap;
+
+    ng.ng_LeftEdge = 8 + labelW; ng.ng_TopEdge = y;
+    ng.ng_Width = 160; ng.ng_Height = rowH;
+    ng.ng_GadgetText = (UBYTE *)"Submit for Review"; ng.ng_Flags = 0; ng.ng_GadgetID = SG_GO;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
+    ng.ng_LeftEdge = 8 + labelW + 160 + gap; ng.ng_Width = 100;
+    ng.ng_GadgetText = (UBYTE *)"Cancel"; ng.ng_GadgetID = SG_CANCEL;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
+    y += rowH + gap;
+
+    if (!gad) { FreeGadgets(glist); set_status("Could not build the submit form."); return; }
+    width = 8 + labelW + fieldW + 8;
+    height = y + 4;
+
+    w = OpenWindowTags(NULL,
+        WA_Title, (ULONG)"Submit a Package for Review",
+        WA_InnerWidth, width, WA_InnerHeight, height - top + gap,
+        WA_Left, (g_win ? g_win->LeftEdge + 40 : 80),
+        WA_Top,  (g_win ? g_win->TopEdge + 40 : 60),
+        WA_Flags, WFLG_DRAGBAR | WFLG_DEPTHGADGET | WFLG_CLOSEGADGET
+                | WFLG_ACTIVATE | WFLG_SMART_REFRESH,
+        WA_IDCMP, IDCMP_CLOSEWINDOW | IDCMP_REFRESHWINDOW | BUTTONIDCMP | STRINGIDCMP,
+        WA_Gadgets, (ULONG)glist,
+        WA_PubScreen, (ULONG)g_scr,
+        TAG_END);
+    if (!w) { FreeGadgets(glist); set_status("Could not open the submit window."); return; }
+    GT_RefreshWindow(w, NULL);
+    ActivateGadget(g_id, w, NULL);
+
+    while (!done) {
+        struct IntuiMessage *imsg;
+        WaitPort(w->UserPort);
+        while ((imsg = GT_GetIMsg(w->UserPort)) != NULL) {
+            ULONG cls = imsg->Class;
+            struct Gadget *hit = (struct Gadget *)imsg->IAddress;
+            GT_ReplyIMsg(imsg);
+            if (cls == IDCMP_CLOSEWINDOW) done = 1;
+            else if (cls == IDCMP_REFRESHWINDOW) { GT_BeginRefresh(w); GT_EndRefresh(w, TRUE); }
+            else if (cls == IDCMP_GADGETUP && hit) {
+                if (hit->GadgetID == SG_CANCEL) done = 1;
+                else if (hit->GadgetID == SG_GO) { done = 1; submit = 1; }
+            }
+        }
+    }
+    if (submit) {
+        const char *sid  = (const char *)((struct StringInfo *)g_id->SpecialInfo)->Buffer;
+        const char *surl = (const char *)((struct StringInfo *)g_url->SpecialInfo)->Buffer;
+        const char *sdsc = (const char *)((struct StringInfo *)g_desc->SpecialInfo)->Buffer;
+        if (!sid[0] || !surl[0]) {
+            req("Submit a Package", "Package id and archive URL are both required.");
+        } else {
+            static char cmd[700], verb[48];
+            snprintf(cmd, sizeof cmd, "%s submit %s \"%s\" \"%s\"",
+                     cli_path(), sid, surl, sdsc);
+            snprintf(verb, sizeof verb, "Submission of '%s'", sid);
+            set_status("Submitting for review...");
+            CloseWindow(w); FreeGadgets(glist);
+            run_async(cmd, verb);
+            return;
+        }
+    }
+    CloseWindow(w);
+    FreeGadgets(glist);
+}
+
 static void action_adopt(void)
 {
     struct FileRequester *fr;
@@ -1274,15 +1375,7 @@ static int dispatch_menu(UWORD menuNum, UWORD itemNum)
         else if (itemNum == PKG_INFO) action_info();
         else if (itemNum == PKG_INSTALL) action_install();
         else if (itemNum == PKG_ADOPT) action_adopt();
-        else if (itemNum == PKG_SUBMIT)
-            req("Submit a Package",
-                "Author a catalog entry ON YOUR AMIGA and send it in\n"
-                "for review - your machine computes the SHA-256 pin:\n\n"
-                "    amipkg submit <id> <archive-url> [description]\n\n"
-                "e.g.  amipkg submit supertool\n"
-                "        http://aminet.net/util/misc/SuperTool.lha\n\n"
-                "A maintainer reviews and signs every submission before\n"
-                "it reaches the catalog. (GUI form planned.)");
+        else if (itemNum == PKG_SUBMIT) submit_form();
         else if (itemNum == PKG_REMOVE) action_remove();
         else if (itemNum == PKG_REFRESH) action_refresh();
         else if (itemNum == PKG_SETDIR) action_set_dir();
