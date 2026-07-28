@@ -54,6 +54,8 @@ size_t amipkg_run_recipe(const arecipe *recipe, const char *extract_dir,
                          const char *boot_root, char (*out_paths)[256], size_t max);
 size_t amipkg_install_generic(const char *extract_dir, const char *dest_root,
                               char (*out_paths)[256], size_t max);
+size_t amipkg_install_generic_recorded(const char *extract_dir, const char *dest_root,
+                                       const char *id, char (*out_paths)[256], size_t max);
 int amipkg_extract_single_top_dir(const char *extract_dir);
 int amipkg_extract_nonempty(const char *extract_dir);
 void amipkg_selfupdate_mirror(char (*paths)[256], size_t n);
@@ -126,6 +128,9 @@ static size_t amipkg_run_recipe(const arecipe *rc, const char *e, const char *b,
   printf("amipkg: install is Amiga-only in the host build\n"); return 0; }
 static size_t amipkg_install_generic(const char *e, const char *d, char (*o)[256], size_t m)
 { (void)e; (void)d; (void)o; (void)m; return 0; }
+static size_t amipkg_install_generic_recorded(const char *e, const char *d, const char *i,
+                                              char (*o)[256], size_t m)
+{ (void)e; (void)d; (void)i; (void)o; (void)m; return 0; }
 static int amipkg_extract_single_top_dir(const char *e) { (void)e; return 1; }
 static int amipkg_extract_nonempty(const char *e) { (void)e; return 1; }
 static void amipkg_selfupdate_mirror(char (*p)[256], size_t n) { (void)p; (void)n; }
@@ -556,6 +561,7 @@ static int space_ok(const aidx_entry *e, const char *archive_path, const char *d
  * resolves and orders; this does the fetch/verify/extract/copy/receipt). */
 static int install_entry(const aidx_index *idx, const aidx_entry *e)
 {
+    int generic_recorded = 0;
     const char *root;
     aj_node *tree;
     const aj_node *entry_obj;
@@ -645,13 +651,18 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
         else
             snprintf(dest, sizeof dest, "%s/%s", dir, e->id);
         printf("(no recipe - installing into %s)\n", dest);
-        n = amipkg_install_generic(amipkg_data_path("cache/extract"), dest, paths, 256);
+        /* Uncapped + self-recording (see amipkg_install_generic_recorded);
+         * the caller-side receipt loop below stays for the RECIPE path only. */
+        n = amipkg_install_generic_recorded(amipkg_data_path("cache/extract"), dest,
+                                            e->id, paths, 256);
+        generic_recorded = 1;
     }
     if (n == 0) {
         printf("amipkg: nothing installed (no files matched / not runnable here).\n");
         if (tree) ajson_free(tree); return 10;
     }
-    for (i = 0; i < n; i++) receipt_record_file(e->id, paths[i]);
+    if (!generic_recorded)
+        for (i = 0; i < n; i++) receipt_record_file(e->id, paths[i]);
     /* Self-update: also refresh the binaries actually in use (own program
      * drawer + legacy C:/SYS:Tools homes) - see amipkg_selfupdate_mirror.
      * The NOTE line doubles as the GUIs' restart-requester marker - keep
@@ -1003,6 +1014,7 @@ static int cmd_remove(const char *id, int force)
     size_t nfiles, i, j, k;
     int found = 0;
     int deleted = 0, kept_shared = 0, blocked = 0;
+    long total_lines = 0;
 
     for (i = 0; i < ninst; i++)
         if (strcmp(inst[i].id, id) == 0) found = 1;
@@ -1011,6 +1023,21 @@ static int cmd_remove(const char *id, int force)
     nfiles = load_files_for(id, files, MAX_FILES);
     if (nfiles == 0)
         printf("amipkg: no file inventory for '%s' - only the DB entry will be removed.\n", id);
+    /* Inventories can exceed MAX_FILES (AmiBlitz3: 1100+). This pass handles
+     * the first MAX_FILES; the tail is rewritten below and a re-run
+     * continues - never silently drop files from a removal. */
+    {
+        char rp[192], ln[400];
+        FILE *tf;
+        total_lines = 0;
+        snprintf(rp, sizeof rp, "%sdb/files/%s.files", amipkg_prefix(), id);
+        tf = fopen(rp, "r");
+        if (tf) {
+            while (fgets(ln, sizeof ln, tf))
+                if (ln[0] && ln[0] != '\n') total_lines++;
+            fclose(tf);
+        }
+    }
 
     /* First pass: classify. Shared = the path appears in another package's
      * inventory (case-insensitive compare via strcasecmp fallback loop). */
@@ -1098,6 +1125,37 @@ static int cmd_remove(const char *id, int force)
         if (kept_runtime)
             printf("Kept %d amipkg runtime file(s) (cache/db/config are never receipt-deleted).\n",
                    kept_runtime);
+    }
+
+    /* Continuation: more inventory lines than this pass could load - keep
+     * the DB entry, rewrite the inventory to the UNPROCESSED tail, and ask
+     * for another run. (Processed kept-shared files were intentionally left
+     * on disk and are dropped from the inventory like a completed pass.) */
+    if (total_lines > (long)nfiles) {
+        char rp[192], tmp[192], ln[400];
+        FILE *in, *outf;
+        long skip = (long)nfiles, kept = 0;
+        snprintf(rp, sizeof rp, "%sdb/files/%s.files", amipkg_prefix(), id);
+        snprintf(tmp, sizeof tmp, "%sdb/files/%s.files.new", amipkg_prefix(), id);
+        in = fopen(rp, "r"); outf = fopen(tmp, "w");
+        if (in && outf) {
+            while (fgets(ln, sizeof ln, in)) {
+                if (!(ln[0] && ln[0] != '\n')) continue;
+                if (skip > 0) { skip--; continue; }
+                fputs(ln, outf); kept++;
+            }
+        }
+        if (in) fclose(in);
+        if (outf) fclose(outf);
+        if (kept > 0) {
+            remove(rp);
+            amipkg_rename(tmp, rp);
+            printf("Removed %d file(s); %ld remain in this large package -\n"
+                   "run `amipkg remove %s%s` again to continue.\n",
+                   deleted, kept, id, force ? " FORCE" : "");
+            return 0;
+        }
+        remove(tmp);
     }
 
     /* Rewrite installed.txt without this id. */

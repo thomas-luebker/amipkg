@@ -678,6 +678,111 @@ int amipkg_extract_single_top_dir(const char *extract_dir)
  * is the "drop the Aminet app into a drawer" a user would do by hand - a
  * best-effort install (apps needing their own Installer may need manual setup).
  * Returns the count of installed files (recorded for clean removal). */
+/* Uncapped, receipt-recording generic install. The old array-based path
+ * silently TRUNCATED big archives: walk_tree stopped at 512 tree entries and
+ * the caller recorded at most 256 receipt lines - AmiBlitz3 (1109 files)
+ * arrived half-installed with "unresolved dependencies" (A4000 report).
+ * This walks and copies recursively with no caps, appends every file to the
+ * receipt as it goes, and afterwards PROMOTES bundled <top>/Libs/*.library
+ * to LIBS: when missing there (the classic "copy our Libs drawer to your
+ * system Libs" install instruction, e.g. AmiBlitz's wizard.library) -
+ * promoted copies are receipt-recorded too, so remove cleans them up. */
+typedef struct {
+    FILE *rcpt;
+    char (*out_paths)[256];
+    size_t out_max, out_n, copied;
+    char libs[40][300];        /* installed dest paths of bundled Libs/ */
+    size_t nlibs;
+} gen_ctx;
+
+static void gen_install_rec(const char *src_root, const char *rel,
+                            const char *dest_root, gen_ctx *cx)
+{
+    BPTR lock;
+    struct FileInfoBlock *fib;
+    char spath[512];
+    if (rel[0]) snprintf(spath, sizeof spath, "%s/%s", src_root, rel);
+    else        snprintf(spath, sizeof spath, "%s", src_root);
+    lock = Lock((STRPTR)spath, ACCESS_READ);
+    if (!lock) return;
+    fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    if (!fib) { UnLock(lock); return; }
+    if (Examine(lock, fib) && fib->fib_DirEntryType > 0) {
+        while (ExNext(lock, fib)) {
+            char childrel[512];
+            if (rel[0]) snprintf(childrel, sizeof childrel, "%s/%s", rel, fib->fib_FileName);
+            else        snprintf(childrel, sizeof childrel, "%s", fib->fib_FileName);
+            if (fib->fib_DirEntryType > 0) {
+                gen_install_rec(src_root, childrel, dest_root, cx);
+            } else {
+                char src[600], dst[600], hex[65];
+                snprintf(src, sizeof src, "%s/%s", src_root, childrel);
+                snprintf(dst, sizeof dst, "%s/%s", dest_root, childrel);
+                if (copy_file(src, dst)) {
+                    cx->copied++;
+                    if (cx->rcpt) {
+                        if (sha256_of_file(dst, hex) == 0) fprintf(cx->rcpt, "%s|%s\n", dst, hex);
+                        else                                fprintf(cx->rcpt, "%s\n", dst);
+                    }
+                    if (cx->out_n < cx->out_max) {
+                        strncpy(cx->out_paths[cx->out_n], dst, 255);
+                        cx->out_paths[cx->out_n][255] = 0;
+                        cx->out_n++;
+                    }
+                    /* <top>/Libs/<name>.library (or Libs/ at the wrap root) */
+                    {
+                        const char *l = strstr(childrel, "Libs/");
+                        size_t cl = strlen(childrel);
+                        if (l && (l == childrel || *(l - 1) == '/')
+                            && strchr(l + 5, '/') == NULL
+                            && cl > 8 && ci_eq(childrel + cl - 8, ".library")
+                            && cx->nlibs < sizeof cx->libs / sizeof cx->libs[0]) {
+                            strncpy(cx->libs[cx->nlibs], dst, sizeof cx->libs[0] - 1);
+                            cx->libs[cx->nlibs][sizeof cx->libs[0] - 1] = 0;
+                            cx->nlibs++;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    FreeDosObject(DOS_FIB, fib);
+    UnLock(lock);
+}
+
+size_t amipkg_install_generic_recorded(const char *extract_dir, const char *dest_root,
+                                       const char *id, char (*out_paths)[256], size_t max)
+{
+    static gen_ctx cx;
+    char rp[192];
+    size_t i, promoted = 0;
+    memset(&cx, 0, sizeof cx);
+    cx.out_paths = out_paths; cx.out_max = max;
+    snprintf(rp, sizeof rp, "%sdb/files/%s.files", amipkg_prefix(), id);
+    cx.rcpt = fopen(rp, "a");
+    gen_install_rec(extract_dir, "", dest_root, &cx);
+    for (i = 0; i < cx.nlibs; i++) {
+        const char *base = selfupdate_basename(cx.libs[i]);
+        char libdst[300], hex[65];
+        BPTR l;
+        snprintf(libdst, sizeof libdst, "LIBS:%s", base);
+        l = Lock((STRPTR)libdst, ACCESS_READ);
+        if (l) { UnLock(l); continue; }   /* never overwrite a system lib */
+        if (copy_file(cx.libs[i], libdst)) {
+            promoted++;
+            if (cx.rcpt) {
+                if (sha256_of_file(libdst, hex) == 0) fprintf(cx.rcpt, "%s|%s\n", libdst, hex);
+                else                                   fprintf(cx.rcpt, "%s\n", libdst);
+            }
+        }
+    }
+    if (cx.rcpt) fclose(cx.rcpt);
+    if (promoted)
+        printf("Promoted %lu bundled librar%s to LIBS: (missing there).\n",
+               (unsigned long)promoted, promoted == 1 ? "y" : "ies");
+    return cx.copied;
+}
+
 size_t amipkg_install_generic(const char *extract_dir, const char *dest_root,
                               char (*out_paths)[256], size_t max)
 {
