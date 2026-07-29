@@ -150,9 +150,9 @@ line) or in the GUI package list.
 
 ```json
 {
-  "schema": 2,
+  "schema": 1,
   "indexVersion": 1,
-  "generated": "2026-07-28",
+  "generated": "2026-07-29",
   "packages": [
     {
       "id": "mytool",
@@ -160,11 +160,13 @@ line) or in the GUI package list.
       "version": "1.0",
       "category": "Utilities",
       "description": "Does a thing",
+      "archive": {
+        "url": "http://your.host/files/MyTool.lha",
+        "sha256": "…64 lowercase hex chars…",
+        "sizeBytes": 12345
+      },
       "install": {
         "sourceType": "url",
-        "url": "http://your.host/files/MyTool.lha",
-        "sha256": "…64 hex chars…",
-        "size": 12345,
         "userVisible": true
       }
     }
@@ -174,13 +176,34 @@ line) or in the GUI package list.
 
 Points that matter:
 
+- **`"schema"` must be exactly `1`.** It is the format version, not your
+  catalog's version — the client refuses to read anything else, and it refuses
+  the *whole* catalog, not just one entry. Use `indexVersion` for your own
+  numbering.
+- **The download lives in `archive`, not in `install`** — `url`, `sha256` and
+  `sizeBytes` (note: `sizeBytes`, not `size`). `install` only carries
+  `sourceType` and `userVisible`.
 - **`sha256` is required.** amipkg refuses to install an archive with no pin.
-  It is what makes downloading the archive itself safe over plain HTTP.
-- Re-generate `sha256` and `size` whenever you replace an archive, and re-sign.
+  It is what makes downloading the archive itself safe over plain HTTP. Lowercase
+  hex.
+- Re-generate `sha256` and `sizeBytes` whenever you replace an archive, and
+  re-sign the catalog.
 - `id` must be unique **within your repo**. See the priority note above for what
   happens when it collides with another repo's id.
 - Archives can live anywhere — a different host, Aminet, GitHub releases. Only
-  the catalog has to be at the repo URL.
+  the catalog has to be at the repo URL. Optional `archive.mirrors` takes a list
+  of fallback URLs.
+
+### Check it before you publish
+
+Do not find out on the Amiga. `amipkg-repo-sign` validates the catalog as it
+signs, and refuses rather than producing a signature for something the client
+cannot read:
+
+```
+$ tools/amipkg-repo-sign sign mystuff.secret packages.json
+amipkg-repo-sign: packages.json: "schema" must be 1 (found 2)
+```
 
 The full schema, including dependencies, recipes and CPU/Kickstart floors, is in
 [`schema/`](https://github.com/thomas-luebker/amiga-pkg) in the gateway repo,

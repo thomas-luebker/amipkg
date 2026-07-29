@@ -4,6 +4,7 @@ amipkg-repo-sign - keys and signatures for your own amipkg repository.
 
     amipkg-repo-sign keygen  <name>              make a keypair
     amipkg-repo-sign sign    <key.secret> <packages.json>
+    amipkg-repo-sign check   <packages.json>      lint it without signing
     amipkg-repo-sign verify  <pubkey-b64> <packages.json>
     amipkg-repo-sign pubkey  <key.secret>        print the public key again
 
@@ -27,7 +28,9 @@ that hosts the repo, and back it up somewhere you would not lose.
 
 import base64
 import hashlib
+import json
 import os
+import re
 import sys
 
 # ------------------------------------------------------------------ Ed25519
@@ -200,11 +203,77 @@ def _load_secret(path):
     return secret
 
 
+def validate_catalog(path):
+    """Refuse to sign something the Amiga client cannot read.
+
+    These are the exact rules aidx_parse enforces. Getting them wrong is not a
+    soft failure: a bad "schema" makes the client reject the WHOLE catalog, and
+    the user just sees the update fail. Better to fail here, on a machine with
+    a screen, than on someone's A4000.
+    """
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+    except Exception as exc:
+        die("cannot read %s (%s)" % (path, exc))
+    try:
+        cat = json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        die("%s is not valid JSON (%s)" % (path, exc))
+
+    if not isinstance(cat, dict):
+        die("%s: top level must be a JSON object" % path)
+    if cat.get("schema") != 1:
+        die('%s: "schema" must be 1 (found %r). It is the FORMAT version, not '
+            "your catalog's - use \"indexVersion\" for your own numbering."
+            % (path, cat.get("schema")))
+    pkgs = cat.get("packages")
+    if not isinstance(pkgs, list):
+        die('%s: "packages" must be a list' % path)
+    if not pkgs:
+        die("%s: no packages - nothing to publish" % path)
+
+    hexre = re.compile(r"^[0-9a-f]{64}$")
+    seen = {}
+    for i, p in enumerate(pkgs):
+        where = "packages[%d]" % i
+        if not isinstance(p, dict):
+            die("%s: must be an object" % where)
+        pid = p.get("id")
+        if not pid or not isinstance(pid, str):
+            die('%s: needs a string "id"' % where)
+        where = "%s (%s)" % (where, pid)
+        if pid in seen:
+            die("%s: duplicate id, already used by packages[%d]" % (where, seen[pid]))
+        seen[pid] = i
+        if not p.get("version"):
+            die('%s: needs a "version"' % where)
+
+        a = p.get("archive")
+        if not isinstance(a, dict):
+            die('%s: needs an "archive" object with url/sha256/sizeBytes. '
+                "The download does NOT go in \"install\"." % where)
+        if "size" in a and "sizeBytes" not in a:
+            die('%s: archive uses "size"; the field is "sizeBytes"' % where)
+        url = a.get("url", "")
+        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+            die('%s: archive.url must be an http:// or https:// URL' % where)
+        sha = a.get("sha256", "")
+        if not isinstance(sha, str) or not hexre.match(sha):
+            die('%s: archive.sha256 must be 64 lowercase hex characters. '
+                "amipkg refuses to install an unpinned archive." % where)
+        if not isinstance(a.get("sizeBytes"), int) or a["sizeBytes"] <= 0:
+            die('%s: archive.sizeBytes must be a positive integer' % where)
+
+    return len(pkgs)
+
+
 def cmd_sign(argv):
     if len(argv) != 2:
         die("usage: amipkg-repo-sign sign <key.secret> <packages.json>")
     secret = _load_secret(argv[0])
     index_path = argv[1]
+    n_pkgs = validate_catalog(index_path)
     try:
         with open(index_path, "rb") as f:
             msg = f.read()
@@ -219,7 +288,7 @@ def cmd_sign(argv):
     out = index_path + ".sig"
     with open(out, "w") as f:
         f.write(b64(sig) + "\n")
-    print("Signed %s (%d bytes)" % (index_path, len(msg)))
+    print("Signed %s (%d packages, %d bytes)" % (index_path, n_pkgs, len(msg)))
     print("Wrote  %s" % out)
     print()
     print("Upload BOTH files. Re-sign every time the catalog changes -")
@@ -249,6 +318,13 @@ def cmd_verify(argv):
         die("SIGNATURE DOES NOT VERIFY - do not publish this pair.", 2)
 
 
+def cmd_check(argv):
+    if len(argv) != 1:
+        die("usage: amipkg-repo-sign check <packages.json>")
+    n = validate_catalog(argv[0])
+    print("OK: %s is readable by the Amiga client (%d packages)." % (argv[0], n))
+
+
 def cmd_pubkey(argv):
     if len(argv) != 1:
         die("usage: amipkg-repo-sign pubkey <key.secret>")
@@ -256,7 +332,7 @@ def cmd_pubkey(argv):
 
 
 def main():
-    cmds = {"keygen": cmd_keygen, "sign": cmd_sign,
+    cmds = {"keygen": cmd_keygen, "sign": cmd_sign, "check": cmd_check,
             "verify": cmd_verify, "pubkey": cmd_pubkey}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__.strip())
