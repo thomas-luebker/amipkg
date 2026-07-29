@@ -84,6 +84,10 @@ done
 # --- 3. bundle ---------------------------------------------------------------
 mkdir -p "$STAGE"
 cp "$HERE/amipkg" "$HERE/amipkg-gui" "$HERE/amipkg-mui" "$STAGE/"
+# The parcel icon comes from the REPO, not from whatever happens to be left in
+# the staging drawer - a tidied Desktop aborted the 0.7.3 run mid-build.
+cp "$IMAGER/BundledResources/Assets/IconTemplates/amipkg-gui.info" "$STAGE/" \
+    || fail "parcel icon missing: BundledResources/Assets/IconTemplates/amipkg-gui.info"
 sh "$HERE/dist/make-bundle.sh" >/dev/null
 SHA="$(shasum -a 256 "$HOME/Desktop/amipkg-client.lha" | cut -d' ' -f1)"
 SIZE="$(stat -f%z "$HOME/Desktop/amipkg-client.lha")"
