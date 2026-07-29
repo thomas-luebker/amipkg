@@ -25,7 +25,11 @@ HERE="$(cd "$(dirname "$0")" && pwd)"                 # .../AmigaImager/amipkg
 IMAGER="$(dirname "$HERE")"
 PKGREPO="${AMIGA_PKG_REPO:-$HOME/Development/amiga-pkg}"
 PUBREPO="${PUBLIC_REPO:-$HOME/Development/amipkg}"
-STAGE="${AMIPKG_STAGE:-$HOME/Desktop/amipkg-68k}"
+# Everything this script produces lives under amipkg/build (gitignored), NOT
+# on the Desktop. Tidying the Desktop used to break a release, and a release
+# should not scatter files across someone's desktop in the first place.
+BUILDDIR="${AMIPKG_BUILD:-$HERE/build}"
+STAGE="${AMIPKG_STAGE:-$BUILDDIR/stage}"
 CROSS="${AMIPKG_CROSS:-$HOME/opt/amiga/bin}"
 AMINET_EMAIL="${AMINET_EMAIL:-thomas@amiga-imager.com}"
 
@@ -55,6 +59,7 @@ command -v gh >/dev/null 2>&1 || PATH="/opt/homebrew/bin:$PATH"
 [ -x "$CROSS/m68k-amigaos-gcc" ] || fail "cross toolchain not at $CROSS"
 [ -d "$PKGREPO/.git" ] || fail "amiga-pkg repo not at $PKGREPO"
 DATE_DE="$(date +%-d.%-m.%Y)"
+mkdir -p "$BUILDDIR"
 
 OLD_VER="$(sed -n 's/#define AMIPKG_VERSION "\(.*\)"/\1/p' "$HERE/src/core/store.h")"
 [ -n "$OLD_VER" ] || fail "cannot read current version from store.h"
@@ -85,12 +90,12 @@ done
 mkdir -p "$STAGE"
 cp "$HERE/amipkg" "$HERE/amipkg-gui" "$HERE/amipkg-mui" "$STAGE/"
 # The parcel icon comes from the REPO, not from whatever happens to be left in
-# the staging drawer - a tidied Desktop aborted the 0.7.3 run mid-build.
+# the staging drawer - it used to be whatever a previous release left behind.
 cp "$IMAGER/BundledResources/Assets/IconTemplates/amipkg-gui.info" "$STAGE/" \
     || fail "parcel icon missing: BundledResources/Assets/IconTemplates/amipkg-gui.info"
 sh "$HERE/dist/make-bundle.sh" >/dev/null
-SHA="$(shasum -a 256 "$HOME/Desktop/amipkg-client.lha" | cut -d' ' -f1)"
-SIZE="$(stat -f%z "$HOME/Desktop/amipkg-client.lha")"
+SHA="$(shasum -a 256 "$BUILDDIR/amipkg-client.lha" | cut -d' ' -f1)"
+SIZE="$(stat -f%z "$BUILDDIR/amipkg-client.lha")"
 echo "    bundle: amipkg-client.lha $SIZE bytes, sha $SHA"
 
 # --- 3b. REAL-AmigaOS smoke gauntlet (FS-UAE) ---------------------------------
@@ -98,9 +103,9 @@ echo "    bundle: amipkg-client.lha $SIZE bytes, sha $SHA"
 # byte is published. --no-smoke skips (e.g. headless boxes without FS-UAE).
 if [ "$SMOKE" = 1 ] && [ "$DRY" = 0 ]; then
     echo "==> smoke gauntlet (FS-UAE, ~90s)..."
-    sh "$HERE/smoke/run-smoke.sh" >"$HOME/Desktop/amipkg-smoke-$VER.log" 2>&1 \
-        || fail "SMOKE GAUNTLET FAILED - see ~/Desktop/amipkg-smoke-$VER.log (release NOT published)"
-    rm -f "$HOME/Desktop/amipkg-smoke-$VER.log"
+    sh "$HERE/smoke/run-smoke.sh" >"$BUILDDIR/amipkg-smoke-$VER.log" 2>&1 \
+        || fail "SMOKE GAUNTLET FAILED - see amipkg/build/amipkg-smoke-$VER.log (release NOT published)"
+    rm -f "$BUILDDIR/amipkg-smoke-$VER.log"
     echo "    smoke passed"
 fi
 
@@ -117,10 +122,10 @@ fi
 [ -n "$NOTES$NOTES_FILE" ] || NOTES="amipkg $VER."
 if [ -n "$NOTES_FILE" ]; then
     gh release create "v$VER" --repo thomas-luebker/amiga-pkg --title "amipkg $VER" \
-        --notes-file "$NOTES_FILE" "$HOME/Desktop/amipkg.lha" "$HOME/Desktop/amipkg-client.lha"
+        --notes-file "$NOTES_FILE" "$BUILDDIR/amipkg.lha" "$BUILDDIR/amipkg-client.lha"
 else
     gh release create "v$VER" --repo thomas-luebker/amiga-pkg --title "amipkg $VER" \
-        --notes "$NOTES" "$HOME/Desktop/amipkg.lha" "$HOME/Desktop/amipkg-client.lha"
+        --notes "$NOTES" "$BUILDDIR/amipkg.lha" "$BUILDDIR/amipkg-client.lha"
 fi
 
 # --- 5. re-pin (versioned URL — never releases/latest) -----------------------
@@ -140,7 +145,7 @@ json.dump(p, open("packages/amipkg.json", "w"), indent=2, sort_keys=True)
 open("packages/amipkg.json", "a").write("\n")
 print(f"    pinned {v} (versioned url)")
 PYEOF
-cp "$HOME/Desktop/amipkg.lha" docs/amipkg.lha
+cp "$BUILDDIR/amipkg.lha" docs/amipkg.lha
 python3 amigapkg.py validate >/dev/null || fail "catalog validate failed after re-pin"
 git add packages/amipkg.json docs/amipkg.lha
 git commit -q -m "amipkg $VER: re-pin self-update client + Pages bundle"
@@ -172,8 +177,8 @@ fi
 
 # --- 8. optional Aminet ------------------------------------------------------
 if [ "$AMINET" = 1 ]; then
-    cp "$HERE/dist/amipkg.readme" "$HOME/Desktop/amipkg.readme"
-    ( cd "$HOME/Desktop" \
+    cp "$HERE/dist/amipkg.readme" "$BUILDDIR/amipkg.readme"
+    ( cd "$BUILDDIR" \
         && curl -sS --max-time 300 -T amipkg.lha "ftp://main.aminet.net/new/amipkg.lha" --user "anonymous:$AMINET_EMAIL" \
         && curl -sS --max-time 60 -T amipkg.readme "ftp://main.aminet.net/new/amipkg.readme" --user "anonymous:$AMINET_EMAIL" ) \
         && echo "    Aminet /new updated" || echo "    NOTE: Aminet upload failed - retry manually"

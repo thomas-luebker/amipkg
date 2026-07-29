@@ -10,14 +10,14 @@
 #
 # Env overrides:
 #   AMIPKG_BIN    dir holding amipkg, amipkg-gui, amipkg-gui.info
-#                 (default: ~/Desktop/amipkg-68k — where the Makefile stages)
+#                 (default: amipkg/build/stage — where release-client.sh stages)
 #   AMIPKG_INDEX  dir holding packages.json + packages.json.sig
 #                 (default: ~/Development/amiga-pkg/docs — the signed repo index)
 set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
-BIN="${AMIPKG_BIN:-$HOME/Desktop/amipkg-68k}"
+BIN="${AMIPKG_BIN:-$(dirname "$HERE")/build/stage}"
 INDEX="${AMIPKG_INDEX:-$HOME/Development/amiga-pkg/docs}"
-OUT="${1:-$HOME/Desktop/amipkg.lha}"
+OUT="${1:-$(dirname "$HERE")/build/amipkg.lha}"
 
 STAGE="$(mktemp -d)/AmiPKG"
 mkdir -p "$STAGE"
