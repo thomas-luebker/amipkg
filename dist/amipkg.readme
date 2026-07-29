@@ -3,70 +3,119 @@ Author:       thomas@amiga-imager.com (Thomas Luebker)
 Uploader:     thomas@amiga-imager.com (Thomas Luebker)
 Type:         util/sys
 Version:      0.7.1
+Requires:     AmigaOS 3.0+, C:lha; bsdsocket.library for downloads
 Architecture: m68k-amigaos >= 3.0
 Distribution: Aminet
+Replaces:     util/sys/amipkg.lha
 URL:          https://github.com/thomas-luebker/amipkg
 
-amipkg - install, update and remove software on your Amiga
-==========================================================
 
-amipkg is a package manager for classic AmigaOS 3.x - think "apt/Homebrew
-for your Amiga". It installs, updates and removes software from
-a curated catalog of 200+ freely-distributable classics and tools (players,
-commodities, internet apps, dev tools, games), resolved and downloaded
-straight on your Amiga.
+        amipkg - install, update and remove software on your Amiga
+        =========================================================
+
+
+amipkg is a package manager for classic AmigaOS 3.x - think "apt" or
+"Homebrew" for your Amiga. It installs, updates and removes software
+from a curated catalog of 200+ freely-distributable classics and tools:
+players, commodities, internet apps, development tools and games. It
+resolves and downloads everything straight on the Amiga.
+
+
+WHAT MAKES IT DIFFERENT
+-----------------------
+
+Signed catalog, verified on the Amiga
+    The package index is Ed25519-signed offline, and your Amiga checks
+    that signature before it will use the index. Every download is then
+    checked against a SHA-256 recorded inside it. A tampered index or a
+    tampered archive is refused. No other Amiga tool does this.
+
+It cleans up after itself
+    A receipt database records every file written and every boot-script
+    change made. "amipkg remove" deletes only what it installed and
+    strips its own User-Startup blocks - nothing else. "amipkg doctor"
+    audits your installs against those receipts.
+
+It knows what a package needs
+    Dependencies are installed first, and the right CPU build is picked
+    for your machine (68000 to 68060, via AttnFlags).
+
 
 FEATURES
+--------
 
- * Curated, CRYPTOGRAPHICALLY SIGNED catalog: the index is Ed25519-signed
-   offline and verified on your Amiga; every download is checked against a
-   SHA-256 pinned in that signed catalog. A tampered index or archive is
-   refused. No other Amiga tool does this.
- * Dependency resolution: installs what a package needs first, picking the
-   right CPU build for your machine (68000..68060 via AttnFlags).
- * Clean removal: a receipt database records every file and boot-script
-   change; `amipkg remove` deletes only what it installed and strips its
-   User-Startup blocks. `amipkg doctor` audits your installs.
- * Three front-ends, one logic: a fast CLI (list/avail/info/install/
-   upgrade/remove/update/doctor, DRYRUN preview), a zero-dependency
-   GadTools GUI, and a MUI GUI (3.8+) - browse, search, category filter,
-   newest-first, one-click install with live progress, Run and Adopt.
- * MULTIPLE REPOSITORIES: install from the curated catalog, from your
-   club's, or from your own. A repository is two static files on any web
-   server; sign yours and your users get the same on-Amiga verification the
-   official one gets. Order decides which repo wins a package, and
-   `repo:package` asks a specific one. See HOSTING.md in the source repo.
- * Self-updating: `amipkg upgrade amipkg`.
- * Runs on a stock 68000 with AmigaOS 3.0+; guaranteed 128 KB stack via
-   StackSwap regardless of your Shell settings.
+ * Three front-ends, one implementation:
+       - a fast CLI: avail, info, install, upgrade, remove, update,
+         list and doctor, with a DRYRUN preview
+       - a GadTools GUI needing no extra dependencies
+       - a MUI GUI (3.8+)
+   Both GUIs offer browsing, search, category filter, newest-first
+   sorting, one-click install with live progress, Run and Adopt.
+
+ * Multiple repositories. Install from the curated catalog, from your
+   club's, or from your own. A repository is just two static files on
+   any web server. Sign yours and your users get exactly the same
+   on-Amiga verification the official catalog gets. Repository order
+   decides which one wins a package name, and "repo:package" asks a
+   specific one. See HOSTING.md in the source repository.
+
+ * Adopt an app you already have: "amipkg adopt" takes over managing an
+   existing installation, so updates land where you already keep it.
+
+ * Self-updating: "amipkg upgrade amipkg".
+
+ * Runs on a stock 68000 under AmigaOS 3.0+, with a guaranteed 128 KB
+   stack via StackSwap - whatever your Shell happens to be set to.
+
 
 REQUIREMENTS
+------------
 
- * AmigaOS 3.0+ (GadTools); C:lha (standard on almost every system)
- * A TCP/IP stack with bsdsocket.library for downloads only - Roadshow,
-   AmiTCP, Miami, or an emulator's built-in bsdsocket. Browsing the bundled
-   catalog works offline.
- * Optional: AmiSSL 5.x enables downloads from https-only hosts (GitHub);
-   everything on Aminet works without it.
+ Needed      AmigaOS 3.0 or newer, and C:lha (present on almost every
+             system).
 
-INSTALL
+ Downloads   A TCP/IP stack providing bsdsocket.library - Roadshow,
+             AmiTCP, Miami, or an emulator's built-in one. Browsing the
+             bundled catalog works offline.
 
-Extract into a drawer of your choice - amipkg LIVES in that drawer (like
-MUI:), with the signed catalog seeded for offline browsing. Double-click
-"Install" (self-contained: nothing outside the drawer is ever touched;
-uninstall = delete the drawer) or "Install-System" (additionally adds the
-AMIPKG: assign + Shell path to S:User-Startup as one marked block).
+ Optional    AmiSSL 5.x, which enables downloads from https-only hosts
+             such as GitHub. Everything on Aminet works without it.
+
+
+INSTALLATION
+------------
+
+Extract into a drawer of your choice. amipkg LIVES in that drawer, the
+way MUI: does, with the signed catalog seeded for offline browsing.
+
+ Install          Self-contained. Nothing outside the drawer is ever
+                  touched, and uninstalling means deleting the drawer.
+
+ Install-System   The same, plus an AMIPKG: assign and a Shell path
+                  added to S:User-Startup as one clearly marked block.
+
 
 QUICK START
+-----------
 
-  amipkg avail mod          ; search the catalog
-  amipkg install hippoplayer
-  amipkg check              ; anything outdated?
-  amipkg upgrade            ; update everything
+ amipkg avail mod             search the catalog
+ amipkg install hippoplayer   install a package
+ amipkg check                 anything outdated?
+ amipkg upgrade               update everything
+ amipkg repo                  list your repositories
 
-Package submissions are pull requests (pure Python tooling, no Amiga or Mac
-needed) reviewed and signed by a maintainer - Homebrew-style:
-https://github.com/thomas-luebker/amiga-pkg
 
-amipkg is part of the Amiga Imager project (https://amiga-imager.com) but
-runs on ANY AmigaOS 3.x system - no Amiga Imager required.
+CONTRIBUTING
+------------
+
+Package submissions are pull requests, reviewed and signed by a
+maintainer - Homebrew-style. The tooling is pure Python, so neither an
+Amiga nor a Mac is needed to add a package:
+
+ https://github.com/thomas-luebker/amiga-pkg
+
+You can also submit straight from the Amiga with "amipkg submit".
+
+
+amipkg is part of the Amiga Imager project (https://amiga-imager.com),
+but it runs on ANY AmigaOS 3.x system - Amiga Imager is not required.
