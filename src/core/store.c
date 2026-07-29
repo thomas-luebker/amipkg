@@ -16,6 +16,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* The resolved data prefix. It is an ABSOLUTE path since 0.4.7 (not the short
+ * "AMIPKG:"), so every buffer built from it must be sized off this - GCC's
+ * -Wformat-truncation caught three that were still sized for the old short
+ * form. */
+#define AMIPKG_PREFIX_MAX 300
+
 char *read_file(const char *path)
 {
     FILE *f = fopen(path, "rb");
@@ -68,7 +74,9 @@ size_t load_installed(rcpt_installed *out, size_t max)
 
 size_t load_files_for(const char *id, rcpt_file *out, size_t max)
 {
-    char path[128];
+    /* Big enough for the resolved prefix (which is an ABSOLUTE path since
+     * 0.4.7, not the short "AMIPKG:") plus the longest id. */
+    char path[AMIPKG_PREFIX_MAX + 96];
     char *text;
     size_t n;
     snprintf(path, sizeof path, "%sdb/files/%s.files", amipkg_prefix(), id);
@@ -81,7 +89,7 @@ size_t load_files_for(const char *id, rcpt_file *out, size_t max)
 
 /* ---- runtime data prefix ---------------------------------------------- */
 
-static char g_prefix[300] = "";
+static char g_prefix[AMIPKG_PREFIX_MAX] = "";
 
 #ifdef __amigaos__
 static int lock_exists(const char *path)
@@ -210,7 +218,7 @@ void amipkg_get_installdir(char *out, size_t n)
 
 void amipkg_get_pkgdir(const char *id, char *out, size_t n)
 {
-    char cfg[192];
+    char cfg[AMIPKG_PREFIX_MAX + 96];
     char *text;
     snprintf(cfg, sizeof cfg, "%sconfig/dir-%s", amipkg_prefix(), id);
     text = read_file(cfg);
@@ -224,7 +232,7 @@ void amipkg_get_pkgdir(const char *id, char *out, size_t n)
 
 int amipkg_set_pkgdir(const char *id, const char *path)
 {
-    char cfg[192];
+    char cfg[AMIPKG_PREFIX_MAX + 96];
     FILE *f;
     snprintf(cfg, sizeof cfg, "%sconfig/dir-%s", amipkg_prefix(), id);
     if (!path || !path[0]) { remove(cfg); return 0; }
@@ -251,3 +259,50 @@ int amipkg_set_installdir(const char *path)
 
 /* See store.h - the one shared installed-receipt scratch buffer. */
 rcpt_installed amipkg_inst_scratch[MAX_PKGS];
+
+/* Which system drawer is this, if any?
+ *
+ * Installing a recipe-less package into a system drawer used to copy the whole
+ * archive tree there - documentation included - AND nest it, so a command
+ * landed at C:Tool/Tool where the shell will never find it (yelworC/djbase,
+ * 2026-07-28). System drawers hold flat, specific things; this is how we know
+ * which. Ordinary app drawers return SD_NONE and nothing changes for them. */
+static int sd_ci_eq(const char *a, const char *b)
+{
+    while (*a && *b) {
+        int ca = (unsigned char)*a, cb = (unsigned char)*b;
+        if (ca >= 'A' && ca <= 'Z') ca += 32;
+        if (cb >= 'A' && cb <= 'Z') cb += 32;
+        if (ca != cb) return 0;
+        a++; b++;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+int amipkg_system_drawer_kind(const char *path)
+{
+    static const struct { const char *name; int kind; } tab[] = {
+        { "c",         SD_C },      { "libs",    SD_LIBS },
+        { "devs",      SD_DEVS },   { "l",       SD_L },
+        { "s",         SD_S },      { "fonts",   SD_FONTS },
+        { "classes",   SD_CLASSES },{ "prefs",   SD_PREFS },
+        { NULL, 0 }
+    };
+    char leaf[64];
+    const char *p;
+    size_t n = 0, i;
+    if (!path || !path[0]) return SD_NONE;
+
+    /* Take the last component, with or without a trailing colon/slash:
+     * "C:", "SYS:C", "DH0:System/Libs" all reduce to the leaf. */
+    p = path + strlen(path);
+    while (p > path && (p[-1] == '/' || p[-1] == ':')) p--;
+    { const char *q = p;
+      while (q > path && q[-1] != '/' && q[-1] != ':') q--;
+      while (q < p && n < sizeof leaf - 1) leaf[n++] = *q++; }
+    leaf[n] = '\0';
+    if (!n) return SD_NONE;
+    for (i = 0; tab[i].name; i++)
+        if (sd_ci_eq(leaf, tab[i].name)) return tab[i].kind;
+    return SD_NONE;
+}

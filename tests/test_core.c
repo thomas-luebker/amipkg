@@ -19,8 +19,10 @@
 #include "../src/core/ajson.h"
 #include "../src/core/arepo.h"
 /* NOT store.h: it declares a non-static read_file, which collides with this
- * file's own static helper of the same name. Only the test hook is needed. */
+ * file's own static helper of the same name. Declare just what is needed. */
 void amipkg_reset_prefix_for_test(void);
+enum { SD_NONE = 0, SD_C, SD_LIBS, SD_DEVS, SD_L, SD_S, SD_FONTS, SD_CLASSES, SD_PREFS };
+int amipkg_system_drawer_kind(const char *path);
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -612,6 +614,44 @@ static void test_arepo_merge(void)
     amipkg_reset_prefix_for_test();
 }
 
+/* ---- system-drawer classification ---------------------------------------
+ *
+ * This decides whether a recipe-less install routes at all. A false positive
+ * scatters an app; a false negative buries a command at C:Tool/Tool where the
+ * shell will not find it. Both directions are checked.
+ */
+static void test_system_drawer(void)
+{
+    /* the real system drawers, however they are written */
+    CHECK(amipkg_system_drawer_kind("C:") == SD_C, "sd: C:");
+    CHECK(amipkg_system_drawer_kind("c:") == SD_C, "sd: case-insensitive");
+    CHECK(amipkg_system_drawer_kind("SYS:C") == SD_C, "sd: SYS:C");
+    CHECK(amipkg_system_drawer_kind("SYS:C/") == SD_C, "sd: trailing slash");
+    CHECK(amipkg_system_drawer_kind("DH0:System/Libs") == SD_LIBS, "sd: nested Libs");
+    CHECK(amipkg_system_drawer_kind("LIBS:") == SD_LIBS, "sd: LIBS:");
+    CHECK(amipkg_system_drawer_kind("DEVS:") == SD_DEVS, "sd: DEVS:");
+    CHECK(amipkg_system_drawer_kind("L:") == SD_L, "sd: L:");
+    CHECK(amipkg_system_drawer_kind("S:") == SD_S, "sd: S:");
+    CHECK(amipkg_system_drawer_kind("FONTS:") == SD_FONTS, "sd: FONTS:");
+    CHECK(amipkg_system_drawer_kind("SYS:Classes") == SD_CLASSES, "sd: Classes");
+    CHECK(amipkg_system_drawer_kind("SYS:Prefs") == SD_PREFS, "sd: Prefs");
+
+    /* ordinary app drawers MUST NOT route - their behaviour is unchanged */
+    CHECK(amipkg_system_drawer_kind("SYS:Programs") == SD_NONE, "sd: Programs is not system");
+    CHECK(amipkg_system_drawer_kind("SYS:Programs/iGame") == SD_NONE, "sd: app drawer");
+    CHECK(amipkg_system_drawer_kind("Work:Games") == SD_NONE, "sd: Games");
+    CHECK(amipkg_system_drawer_kind("DH1:") == SD_NONE, "sd: bare volume");
+    CHECK(amipkg_system_drawer_kind("") == SD_NONE, "sd: empty");
+    CHECK(amipkg_system_drawer_kind(NULL) == SD_NONE, "sd: NULL");
+
+    /* the trap: a drawer whose NAME merely contains a system name */
+    CHECK(amipkg_system_drawer_kind("SYS:Programs/Class") == SD_NONE, "sd: 'Class' != Classes");
+    CHECK(amipkg_system_drawer_kind("Work:Cool") == SD_NONE, "sd: 'Cool' does not match C");
+    CHECK(amipkg_system_drawer_kind("Work:MyLibs") == SD_NONE, "sd: 'MyLibs' != Libs");
+    CHECK(amipkg_system_drawer_kind("SYS:Storage/DOSDrivers") == SD_NONE,
+          "sd: only the LAST component counts");
+}
+
 int main(void)
 {
     test_sha256();
@@ -624,6 +664,7 @@ int main(void)
     test_arun();
     test_arepo();
     test_arepo_merge();
+    test_system_drawer();
     if (failures == 0) {
         printf("amipkg core: ALL TESTS PASSED\n");
         return 0;

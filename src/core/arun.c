@@ -23,6 +23,26 @@ int arun_glob_match(const char *pat, const char *str)
     return *pat == '\0';
 }
 
+/* Join a<sep>b into out, truncating deliberately rather than overflowing.
+ *
+ * snprintf would do the same, but GCC's -Wformat-truncation cannot see that
+ * the truncation is intended and fails the -Werror build. Doing it explicitly
+ * says so in the code. Enlarging arun_op instead is not free: it is 512 ops of
+ * fixed-size fields on machines with 1 MB. */
+static void join_path(char *out, size_t n, const char *a,
+                      const char *sep, const char *b)
+{
+    size_t la, ls, lb;
+    if (!n) return;
+    la = strlen(a); if (la >= n - 1) la = n - 1;
+    memcpy(out, a, la);
+    ls = strlen(sep); if (la + ls >= n - 1) ls = n - 1 - la;
+    memcpy(out + la, sep, ls);
+    lb = strlen(b); if (la + ls + lb >= n - 1) lb = n - 1 - la - ls;
+    memcpy(out + la + ls, b, lb);
+    out[la + ls + lb] = '\0';
+}
+
 static void copy_str(char *dst, size_t dstsize, const char *src)
 {
     size_t n = src ? strlen(src) : 0;
@@ -110,9 +130,9 @@ static void plan_copy(const arecipe_op *op, arun_plan *plan,
                 if (dest[0] && dest[strlen(dest) - 1] == ':')
                     /* assign-absolute dest ("AMIPKG:"): join without '/' -
                      * "X:/y" would mean the PARENT of X: in AmigaDOS. */
-                    snprintf(o->dest, sizeof o->dest, "%s%s", dest, leaf);
+                    join_path(o->dest, sizeof o->dest, dest, "", leaf);
                 else if (dest[0])
-                    snprintf(o->dest, sizeof o->dest, "%s/%s", dest, leaf);
+                    join_path(o->dest, sizeof o->dest, dest, "/", leaf);
                 else
                     copy_str(o->dest, sizeof o->dest, leaf);
             }

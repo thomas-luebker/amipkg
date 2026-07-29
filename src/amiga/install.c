@@ -819,7 +819,49 @@ typedef struct {
     size_t out_max, out_n, copied;
     char libs[40][300];        /* installed dest paths of bundled Libs/ */
     size_t nlibs;
+    /* System-drawer routing (see amipkg_system_drawer_kind). When sysdest is
+     * set, the program files go there FLAT and everything else goes to
+     * companion/ with its structure intact. NULL = the ordinary whole-tree
+     * copy, byte-for-byte the old behaviour. */
+    const char *sysdest;
+    const char *companion;
+    int syskind;
+    size_t n_sys, n_companion;
 } gen_ctx;
+
+/* An Amiga executable starts with HUNK_HEADER. Cheap and reliable - far
+ * better than guessing from the name. */
+static int is_hunk_executable(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    unsigned char h[4];
+    int ok = 0;
+    if (!f) return 0;
+    if (fread(h, 1, 4, f) == 4)
+        ok = (h[0] == 0x00 && h[1] == 0x00 && h[2] == 0x03 && h[3] == 0xF3);
+    fclose(f);
+    return ok;
+}
+
+/* Does this file belong IN the system drawer, or beside it in the companion
+ * drawer? Deliberately conservative: name conventions first, then the hunk
+ * check for the drawers that hold plain executables. Anything unrecognised
+ * goes to the companion, where it is harmless. */
+static int belongs_in_system_drawer(int kind, const char *base, const char *src)
+{
+    if (has_suffix_ci(base, ".info")) return 0;      /* icons stay with the docs */
+    switch (kind) {
+    case SD_LIBS:    return has_suffix_ci(base, ".library");
+    case SD_DEVS:    return has_suffix_ci(base, ".device");
+    case SD_CLASSES: return has_suffix_ci(base, ".class") || has_suffix_ci(base, ".datatype");
+    case SD_FONTS:   return has_suffix_ci(base, ".font");
+    case SD_PREFS:   return has_suffix_ci(base, ".prefs") || is_hunk_executable(src);
+    case SD_C:
+    case SD_L:       return is_hunk_executable(src);
+    case SD_S:       return !strchr(base, '.');      /* scripts have no suffix */
+    default:         return 0;
+    }
+}
 
 static void gen_install_rec(const char *src_root, const char *rel,
                             const char *dest_root, gen_ctx *cx)
@@ -843,7 +885,24 @@ static void gen_install_rec(const char *src_root, const char *rel,
             } else {
                 char src[600], dst[600], hex[65];
                 snprintf(src, sizeof src, "%s/%s", src_root, childrel);
-                snprintf(dst, sizeof dst, "%s/%s", dest_root, childrel);
+                if (cx->sysdest) {
+                    /* System-drawer mode: programs go in FLAT (a command must
+                     * sit at C: itself to be found), everything else lands in
+                     * the companion drawer with its structure kept. */
+                    const char *base = strrchr(childrel, '/');
+                    base = base ? base + 1 : childrel;
+                    if (belongs_in_system_drawer(cx->syskind, base, src)) {
+                        const char *sep =
+                            cx->sysdest[strlen(cx->sysdest) - 1] == ':' ? "" : "/";
+                        snprintf(dst, sizeof dst, "%s%s%s", cx->sysdest, sep, base);
+                        cx->n_sys++;
+                    } else {
+                        snprintf(dst, sizeof dst, "%s/%s", cx->companion, childrel);
+                        cx->n_companion++;
+                    }
+                } else {
+                    snprintf(dst, sizeof dst, "%s/%s", dest_root, childrel);
+                }
                 if (copy_file(src, dst)) {
                     cx->copied++;
                     if (cx->rcpt) {
@@ -874,6 +933,29 @@ static void gen_install_rec(const char *src_root, const char *rel,
     }
     FreeDosObject(DOS_FIB, fib);
     UnLock(lock);
+}
+
+/* Install into a SYSTEM drawer: programs flat into `sysdest`, the rest into
+ * `companion`. Returns files copied; *n_sys / *n_comp report the split so the
+ * caller can tell the user where things went. */
+size_t amipkg_install_generic_routed(const char *extract_dir, const char *sysdest,
+                                     const char *companion, const char *id,
+                                     char (*out_paths)[256], size_t max,
+                                     size_t *n_sys, size_t *n_comp)
+{
+    static gen_ctx cx;
+    char rp[192];
+    memset(&cx, 0, sizeof cx);
+    cx.out_paths = out_paths; cx.out_max = max;
+    cx.sysdest = sysdest; cx.companion = companion;
+    cx.syskind = amipkg_system_drawer_kind(sysdest);
+    snprintf(rp, sizeof rp, "%sdb/files/%s.files", amipkg_prefix(), id);
+    cx.rcpt = fopen(rp, "a");
+    gen_install_rec(extract_dir, "", sysdest, &cx);
+    if (cx.rcpt) fclose(cx.rcpt);
+    if (n_sys)  *n_sys  = cx.n_sys;
+    if (n_comp) *n_comp = cx.n_companion;
+    return cx.copied;
 }
 
 size_t amipkg_install_generic_recorded(const char *extract_dir, const char *dest_root,

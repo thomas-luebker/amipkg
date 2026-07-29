@@ -68,6 +68,10 @@ long amipkg_run_inline_script(const char *script, const char *label);
 int amipkg_strip_overlay(const char *script_path, const char *marker);
 long amipkg_adopt_inventory(const char *id, const char *drawer);
 int  amipkg_detect_version(const char *drawer, const char *id, char *out, size_t n);
+size_t amipkg_install_generic_routed(const char *extract_dir, const char *sysdest,
+                                     const char *companion, const char *id,
+                                     char (*out_paths)[256], size_t max,
+                                     size_t *n_sys, size_t *n_comp);
 const char *amipkg_cpu(void);                     /* "68000".."68060" via AttnFlags */
 int amipkg_ks_version(void);                      /* exec lib_Version (39 = KS 3.0) */
 
@@ -154,6 +158,11 @@ static long amipkg_adopt_inventory(const char *i, const char *d)
 { (void)i; (void)d; return -1; }
 static int amipkg_detect_version(const char *d, const char *i, char *o, size_t n)
 { (void)d; (void)i; if (n) o[0] = 0; return 0; }
+static size_t amipkg_install_generic_routed(const char *e, const char *sd, const char *c,
+                                            const char *i, char (*o)[256], size_t m,
+                                            size_t *ns, size_t *nc)
+{ (void)e; (void)sd; (void)c; (void)i; (void)o; (void)m;
+  if (ns) *ns = 0; if (nc) *nc = 0; return 0; }
 static const char *amipkg_cpu(void) { return ""; }
 static int amipkg_ks_version(void) { return 0; }
 /* adf_extract (portable) is linked from adfread.c; provide its mkdir hook. */
@@ -890,15 +899,38 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
          * install dir root. */
         char dir[256], dest[320];
         amipkg_get_pkgdir(e->id, dir, sizeof dir);   /* adopt override, else global */
-        if (amipkg_extract_single_top_dir(amipkg_data_path("cache/extract")))
-            snprintf(dest, sizeof dest, "%s", dir);
-        else
-            snprintf(dest, sizeof dest, "%s/%s", dir, e->id);
-        printf("(no recipe - installing into %s)\n", dest);
-        /* Uncapped + self-recording (see amipkg_install_generic_recorded);
-         * the caller-side receipt loop below stays for the RECIPE path only. */
-        n = amipkg_install_generic_recorded(amipkg_data_path("cache/extract"), dest,
-                                            e->id, paths, 256);
+
+        if (amipkg_system_drawer_kind(dir) != 0) {
+            /* A system drawer holds flat, specific things. Copying a whole
+             * archive tree here would bury the command at C:Tool/Tool - where
+             * the shell never finds it - and drag the documentation in with
+             * it. So: programs go in flat, the rest beside it. */
+            char companion[320], global[256];
+            size_t n_sys = 0, n_comp = 0;
+            amipkg_get_installdir(global, sizeof global);
+            snprintf(companion, sizeof companion, "%s/%s", global, e->id);
+            printf("(no recipe - '%s' is a system drawer: programs go there,\n"
+                   " everything else into %s)\n", dir, companion);
+            n = amipkg_install_generic_routed(amipkg_data_path("cache/extract"),
+                                              dir, companion, e->id, paths, 256,
+                                              &n_sys, &n_comp);
+            if (n_sys == 0)
+                printf("amipkg: nothing here looks like a program for %s -\n"
+                       "        it all went to %s.\n", dir, companion);
+            else
+                printf("Installed %lu file(s) into %s, %lu into %s.\n",
+                       (unsigned long)n_sys, dir, (unsigned long)n_comp, companion);
+        } else {
+            if (amipkg_extract_single_top_dir(amipkg_data_path("cache/extract")))
+                snprintf(dest, sizeof dest, "%s", dir);
+            else
+                snprintf(dest, sizeof dest, "%s/%s", dir, e->id);
+            printf("(no recipe - installing into %s)\n", dest);
+            /* Uncapped + self-recording (see amipkg_install_generic_recorded);
+             * the caller-side receipt loop below stays for the RECIPE path only. */
+            n = amipkg_install_generic_recorded(amipkg_data_path("cache/extract"), dest,
+                                                e->id, paths, 256);
+        }
         generic_recorded = 1;
     }
     if (n == 0) {

@@ -83,6 +83,15 @@ int amipkg_set_pkgdir(const char *id, const char *path);
  * the CLI (ensure_dirs) and BOTH GUIs do. */
 void amipkg_bridge_assigns(void);
 
+/* Is this path a SYSTEM drawer (C:, LIBS:, DEVS:, L:, S:, FONTS:, CLASSES:,
+ * PREFS:), and which one? A recipe-less install targeting one of these must
+ * place programs FLAT and put the rest beside them - copying a whole archive
+ * tree into C: buries the command at C:Tool/Tool and drags the docs along
+ * (tester reports, 2026-07-28). Returns SD_NONE for ordinary app drawers, so
+ * their behaviour is unchanged. */
+enum { SD_NONE = 0, SD_C, SD_LIBS, SD_DEVS, SD_L, SD_S, SD_FONTS, SD_CLASSES, SD_PREFS };
+int amipkg_system_drawer_kind(const char *path);
+
 #ifndef __amigaos__
 /* HOST BUILD ONLY. The resolved prefix is cached; the test suite repoints it
  * via AMIPKG_PREFIX and needs the cache dropped. Not compiled on the Amiga. */
