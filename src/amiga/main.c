@@ -67,6 +67,7 @@ int amipkg_rename(const char *from, const char *to);   /* dos Rename; 0 = ok */
 long amipkg_run_inline_script(const char *script, const char *label);
 int amipkg_strip_overlay(const char *script_path, const char *marker);
 long amipkg_adopt_inventory(const char *id, const char *drawer);
+int  amipkg_detect_version(const char *drawer, const char *id, char *out, size_t n);
 const char *amipkg_cpu(void);                     /* "68000".."68060" via AttnFlags */
 int amipkg_ks_version(void);                      /* exec lib_Version (39 = KS 3.0) */
 
@@ -151,6 +152,8 @@ static int amipkg_strip_overlay(const char *p, const char *m)
 { (void)p; (void)m; return 0; }
 static long amipkg_adopt_inventory(const char *i, const char *d)
 { (void)i; (void)d; return -1; }
+static int amipkg_detect_version(const char *d, const char *i, char *o, size_t n)
+{ (void)d; (void)i; if (n) o[0] = 0; return 0; }
 static const char *amipkg_cpu(void) { return ""; }
 static int amipkg_ks_version(void) { return 0; }
 /* adf_extract (portable) is linked from adfread.c; provide its mkdir hook. */
@@ -956,7 +959,7 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
     return 0;
 }
 
-/* `amipkg install <id> [DRYRUN]` - resolve dependencies (topological,
+/* `amipkg install <id> [DIR=<drawer>] [DRYRUN]` - resolve dependencies (topological,
  * CPU-variant aware) and install everything that's missing, dependencies
  * first. DRYRUN prints the plan + download sizes and changes nothing. */
 static int cmd_install2(const char *id, int dry)
@@ -1517,15 +1520,31 @@ static int cmd_adopt(const char *id, const char *drawer, const char *version)
         amipkg_set_pkgdir(id, parent);
     }
 
-    { FILE *f = fopen(amipkg_data_path("db/installed.txt"), "a");
-      if (f) { fprintf(f, "%s|%s|%ld|0\n", id,
-                       version && version[0] ? version : "-",
-                       idx.index_version); fclose(f); } }
+    /* No version given? Read it off the binaries, the way C:Version does.
+     * Recording "-" made the GUIs substitute the CATALOG version, which reads
+     * as the installed one until the repo is disabled and it disappears
+     * (djbase, 2026-07-29). Detecting it is the honest answer. */
+    {
+        static char detected[48];
+        const char *rec = (version && version[0]) ? version : NULL;
+        int auto_found = 0;
+        if (!rec && amipkg_detect_version(drawer, id, detected, sizeof detected)) {
+            rec = detected;
+            auto_found = 1;
+        }
+        { FILE *f = fopen(amipkg_data_path("db/installed.txt"), "a");
+          if (f) { fprintf(f, "%s|%s|%ld|0\n", id, rec ? rec : "-",
+                           idx.index_version); fclose(f); } }
 
-    printf("Adopted %s: %ld file(s) at %s\n", id, files, drawer);
-    printf("Version recorded: %s%s\n",
-           version && version[0] ? version : "unknown",
-           version && version[0] ? "" : " - `amipkg check` will offer a reinstall");
+        printf("Adopted %s: %ld file(s) at %s\n", id, files, drawer);
+        if (rec && auto_found)
+            printf("Version detected on disk: %s\n", rec);
+        else if (rec)
+            printf("Version recorded: %s\n", rec);
+        else
+            printf("Version recorded: unknown (no $VER found)"
+                   " - pass it as `amipkg adopt %s <drawer> <version>`\n", id);
+    }
     printf("Future upgrades install into: %s\n", parent);
     aidx_free(&idx);
     return 0;
@@ -1542,16 +1561,46 @@ static int usage_needs(const char *cmd, const char *args)
 /* `amipkg dir [<path>]` - show or set where recipe-less packages install to.
  * With no argument, prints the current destination; with a path, persists it
  * (a lone "-" reverts to the default). */
-static int cmd_dir(const char *path)
+/* amipkg dir                  show the global install drawer
+ * amipkg dir <path>            set it (- clears back to the default)
+ * amipkg dir <id> <path>       set ONE package's drawer (- clears)
+ * amipkg dir <id> -show        show ONE package's drawer
+ *
+ * The per-package override already existed - `adopt` writes it so upgrades
+ * land where the app really lives - but nothing could set it for a fresh
+ * install. That is the gap testers hit: one global drawer is not enough when
+ * a tool belongs in C: and everything else belongs in SYS:Programs. */
+static int cmd_dir(int argc, char **argv)
 {
     char cur[256];
-    if (!path) {
+    const char *a1 = (argc >= 3) ? argv[2] : NULL;
+    const char *a2 = (argc >= 4) ? argv[3] : NULL;
+
+    if (!a1) {
         amipkg_get_installdir(cur, sizeof cur);
         printf("install dir: %s\n", cur);
         return 0;
     }
-    if (strcmp(path, "-") == 0) path = NULL;   /* clear -> default */
-    if (amipkg_set_installdir(path) != 0) {
+    if (a2) {                                  /* per-package form */
+        const char *id = a1;
+        const char *path = a2;
+        if (strcmp(path, "-show") == 0) {
+            amipkg_get_pkgdir(id, cur, sizeof cur);
+            printf("install dir for '%s': %s\n", id, cur);
+            return 0;
+        }
+        if (strcmp(path, "-") == 0) path = NULL;   /* clear -> follow global */
+        if (amipkg_set_pkgdir(id, path) != 0) {
+            printf("amipkg: could not save the drawer for '%s'.\n", id);
+            return 10;
+        }
+        amipkg_get_pkgdir(id, cur, sizeof cur);
+        if (path) printf("'%s' will install into: %s\n", id, cur);
+        else      printf("'%s' now follows the global install dir: %s\n", id, cur);
+        return 0;
+    }
+    if (strcmp(a1, "-") == 0) a1 = NULL;       /* clear -> default */
+    if (amipkg_set_installdir(a1) != 0) {
         printf("amipkg: could not write %s\n", amipkg_data_path("config/installdir"));
         return 10;
     }
@@ -1565,14 +1614,14 @@ static int dispatch(int argc, char **argv)
     int rc = 5;
     if (argc < 2) {
         printf("amipkg " AMIPKG_VERSION " - the AmigaPKG package manager\n");
-        printf("usage: amipkg update | list | avail [term] | check | doctor | info <id> | fetch <id> | install <id> [DRYRUN] | submit <id> <url> [CAT=<Category>] [desc] | adopt <id> <drawer> [<ver>] | upgrade [<id>] | repo ... | dir [<path>] | verify <file> <sha256> | remove <id> [FORCE]\n");
+        printf("usage: amipkg update | list | avail [term] | check | doctor | info <id> | fetch <id> | install <id> [DIR=<drawer>] [DRYRUN] | submit <id> <url> [CAT=<Category>] [desc] | adopt <id> <drawer> [<ver>] | upgrade [<id>] | repo ... | dir [<path>] | dir <id> <path> | verify <file> <sha256> | remove <id> [FORCE]\n");
         return 5;
     }
     amipkg_ensure_dirs();   /* create AMIPKG:cache + db + config drawers if absent */
     if (strcmp(argv[1], "update") == 0) rc = cmd_update();
     else if (strcmp(argv[1], "repo") == 0) rc = cmd_repo(argc, argv);
     else if (strcmp(argv[1], "upgrade") == 0) rc = cmd_upgrade(argc >= 3 ? argv[2] : NULL);
-    else if (strcmp(argv[1], "dir") == 0) rc = cmd_dir(argc >= 3 ? argv[2] : NULL);
+    else if (strcmp(argv[1], "dir") == 0) rc = cmd_dir(argc, argv);
     else if (strcmp(argv[1], "list") == 0) rc = cmd_list();
     else if (strcmp(argv[1], "avail") == 0) rc = cmd_avail(argc >= 3 ? argv[2] : NULL);
     else if (strcmp(argv[1], "check") == 0) rc = cmd_check();
@@ -1596,9 +1645,29 @@ static int dispatch(int argc, char **argv)
         rc = argc >= 3 ? cmd_info(argv[2]) : usage_needs("info", "<id>");
     else if (strcmp(argv[1], "fetch") == 0)
         rc = argc >= 3 ? cmd_fetch(argv[2]) : usage_needs("fetch", "<id>");
-    else if (strcmp(argv[1], "install") == 0)
-        rc = argc >= 3 ? cmd_install2(argv[2], argc >= 4 && strcmp(argv[3], "DRYRUN") == 0)
-                       : usage_needs("install", "<id> [DRYRUN]");
+    else if (strcmp(argv[1], "install") == 0) {
+        if (argc < 3) rc = usage_needs("install", "<id> [DIR=<drawer>] [DRYRUN]");
+        else {
+            int dry = 0, i;
+            const char *want_dir = NULL;
+            for (i = 3; i < argc; i++) {
+                if (strcmp(argv[i], "DRYRUN") == 0) dry = 1;
+                else if (strncmp(argv[i], "DIR=", 4) == 0) want_dir = argv[i] + 4;
+            }
+            /* Recorded BEFORE the install so the choice also governs later
+             * upgrades - the same file `adopt` writes. */
+            if (want_dir && want_dir[0]) {
+                char bare[128], repo[AREPO_ID_MAX];
+                arepo_split_spec(argv[2], repo, sizeof repo, bare, sizeof bare);
+                if (amipkg_set_pkgdir(bare, want_dir) != 0)
+                    printf("amipkg: could not remember the drawer for '%s'.\n", bare);
+                else
+                    printf("'%s' will install into %s (remembered for upgrades).\n",
+                           bare, want_dir);
+            }
+            rc = cmd_install2(argv[2], dry);
+        }
+    }
     else if (strcmp(argv[1], "doctor") == 0) rc = cmd_doctor();
     else if (strcmp(argv[1], "adopt") == 0)
         rc = argc >= 4 ? cmd_adopt(argv[2], argv[3], argc >= 5 ? argv[4] : NULL)

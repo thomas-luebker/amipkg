@@ -319,6 +319,128 @@ static int is_amipkg_runtime_rel(const char *rel)
     return 0;
 }
 
+static int has_suffix_ci(const char *s, const char *suf)
+{
+    size_t ls = strlen(s), lf = strlen(suf);
+    if (lf > ls) return 0;
+    return ci_eq(s + ls - lf, suf);
+}
+
+static int ci_contains(const char *hay, const char *needle)
+{
+    size_t i, j;
+    if (!hay || !needle || !needle[0]) return 0;
+    for (i = 0; hay[i]; i++) {
+        for (j = 0; needle[j]; j++) {
+            int a = hay[i + j], b = needle[j];
+            if (a >= 'A' && a <= 'Z') a += 32;
+            if (b >= 'A' && b <= 'Z') b += 32;
+            if (!hay[i + j] || a != b) break;
+        }
+        if (!needle[j]) return 1;
+    }
+    return 0;
+}
+
+/* Read a "$VER: <name> <version> ..." string out of an Amiga binary.
+ *
+ * Every well-behaved Amiga executable carries one - it is what C:Version
+ * reports. Scanned in blocks with a small overlap so a tag straddling a block
+ * boundary is still found. Returns 1 and fills out/name_out on success. */
+static int ver_from_file(const char *path, char *out, size_t n,
+                         char *name_out, size_t name_n)
+{
+    FILE *f = fopen(path, "rb");
+    static char buf[8192 + 64];
+    size_t got, keep = 0;
+    int found = 0;
+    if (!f) return 0;
+    while (!found && (got = fread(buf + keep, 1, 8192, f)) > 0) {
+        size_t total = keep + got, i;
+        buf[total] = '\0';
+        for (i = 0; i + 6 < total; i++) {
+            if (buf[i] == '$' && strncmp(buf + i, "$VER:", 5) == 0) {
+                const char *p = buf + i + 5;
+                const char *end = buf + total;
+                char nm[64]; size_t k = 0;
+                while (p < end && (*p == ' ' || *p == '\t')) p++;
+                while (p < end && *p > ' ' && k < sizeof nm - 1) nm[k++] = *p++;
+                nm[k] = '\0';
+                while (p < end && (*p == ' ' || *p == '\t')) p++;
+                k = 0;
+                /* The version token: digits/dots, as C:Version prints it. */
+                if (p < end && *p >= '0' && *p <= '9') {
+                    while (p < end && *p > ' ' && k < n - 1) out[k++] = *p++;
+                    out[k] = '\0';
+                    if (k) {
+                        strncpy(name_out, nm, name_n - 1);
+                        name_out[name_n - 1] = '\0';
+                        found = 1;
+                    }
+                }
+                if (found) break;
+            }
+        }
+        if (found) break;
+        /* keep a tail so a tag split across reads is not missed */
+        keep = (total > 32) ? 32 : total;
+        memmove(buf, buf + total - keep, keep);
+    }
+    fclose(f);
+    return found;
+}
+
+/* Detect the version actually installed in `drawer`.
+ *
+ * Testers adopt existing installs without knowing the version, and recording
+ * "-" made the GUIs fall back to showing the CATALOG's version - which looks
+ * like the real one until you disable the repo and it vanishes (djbase,
+ * 2026-07-29). Reading the binary is what C:Version does, so it reports what
+ * is genuinely on disk.
+ *
+ * A $VER whose name matches the package id (or the drawer's own name) wins;
+ * otherwise the first one found is used. Returns 1 on success. */
+int amipkg_detect_version(const char *drawer, const char *id, char *out, size_t n)
+{
+    char (*pool)[256] = g_walk_pool;
+    int *is_dir = g_walk_isdir;
+    size_t cnt, i;
+    char best[48] = "", first[48] = "";
+    const char *leaf;
+
+    if (!out || n == 0) return 0;
+    out[0] = '\0';
+    leaf = strrchr(drawer, '/');
+    leaf = leaf ? leaf + 1 : drawer;
+
+    cnt = walk_tree(drawer, "", pool, is_dir, ARUN_MAX_OPS, 0);
+    for (i = 0; i < cnt && !best[0]; i++) {
+        char full[512], v[48], nm[64];
+        const char *sep = drawer[strlen(drawer) - 1] == ':' ? "" : "/";
+        const char *base;
+        if (is_dir[i]) continue;
+        base = strrchr(pool[i], '/');
+        base = base ? base + 1 : pool[i];
+        /* Skip the obvious non-programs. .library and .device DO carry a
+         * $VER and are worth reading. */
+        if (has_suffix_ci(base, ".readme") || has_suffix_ci(base, ".guide")
+            || has_suffix_ci(base, ".info") || has_suffix_ci(base, ".txt")
+            || has_suffix_ci(base, ".doc")  || has_suffix_ci(base, ".lha"))
+            continue;
+        snprintf(full, sizeof full, "%s%s%s", drawer, sep, pool[i]);
+        if (!ver_from_file(full, v, sizeof v, nm, sizeof nm)) continue;
+        if (!first[0]) { strncpy(first, v, sizeof first - 1); first[sizeof first - 1] = 0; }
+        /* Prefer the tag that names this package. */
+        if (ci_contains(nm, id) || ci_contains(nm, leaf) || ci_contains(base, nm)) {
+            strncpy(best, v, sizeof best - 1); best[sizeof best - 1] = 0;
+        }
+    }
+    if (!best[0] && first[0]) strncpy(best, first, sizeof best - 1);
+    if (!best[0]) return 0;
+    strncpy(out, best, n - 1); out[n - 1] = '\0';
+    return 1;
+}
+
 long amipkg_adopt_inventory(const char *id, const char *drawer)
 {
     char (*pool)[256] = g_walk_pool;

@@ -73,7 +73,7 @@ enum {
     ID_UPDATE = 1, ID_CHECK, ID_UPALL, ID_INFO, ID_INSTALL, ID_RUN,
     ID_REMOVE, ID_REFRESH, ID_SETDIR, ID_ABOUT, ID_ADOPT, ID_DOCS, ID_SUBMIT,
     ID_SUBMIT_GO,
-    ID_MUIPREFS,
+    ID_MUIPREFS, ID_INSTALLTO,
     ID_REPOS, ID_REPO_ADD, ID_REPO_ADDGO, ID_REPO_REMOVE, ID_REPO_TOGGLE,
     ID_REPO_UP, ID_REPO_DOWN,
     ID_VIEW, ID_CAT, ID_SORT, ID_FIND, ID_SELECT, ID_DCLICK
@@ -313,13 +313,22 @@ static void rebuild_list(void)
         for (i = 0; i < ninst && g_nrows < MAX_PKGS; i++) {
             Row *r = &g_rows[g_nrows];
             const char *v;
+            char vguess[56];
             if (!contains_ci(inst[i].id, g_filter)) continue;
             strncpy(r->id, inst[i].id, sizeof r->id - 1); r->id[sizeof r->id - 1] = 0;
             strcpy(r->flag, "");
             v = inst[i].version;
             if (have_vidx && aver_is_unknown(v)) {
+                /* No version in the receipt. The catalog's is a GUESS, not a
+                 * fact - mark it "?" so it does not read as what is really
+                 * installed. (djbase, 2026-07-29: an adopted package showed
+                 * the repo's version, then lost it when the repo was
+                 * disabled - because this substitution was silent.) */
                 const aidx_entry *e = aidx_find(&vidx, inst[i].id);
-                if (e && !aver_is_unknown(e->version)) v = e->version;
+                if (e && !aver_is_unknown(e->version)) {
+                    snprintf(vguess, sizeof vguess, "%s?", e->version);
+                    v = vguess;
+                }
             }
             strncpy(r->version, shown_version(v), sizeof r->version - 1);
             r->version[sizeof r->version - 1] = 0;
@@ -895,6 +904,36 @@ static void action_adopt(void)
     FreeAslRequest(fr);
 }
 
+/* LOCKSTEP with gui.c action_install_to: install the selected package into a
+ * drawer the user picks, and REMEMBER it (config/dir-<id>, the same file adopt
+ * writes) so later upgrades land in the same place. */
+static void action_install_to(void)
+{
+    struct FileRequester *fr;
+    struct Window *iwin = NULL;
+    char cur[256], cmd[420], verb[64];
+    Row *r = selected_row();
+    if (!r) { set_status("Select a package first."); return; }
+    if (!AslBase) { set_status("asl.library unavailable - use: amipkg install <id> DIR=<drawer>"); return; }
+    amipkg_get_pkgdir(r->id, cur, sizeof cur);   /* start where it would go now */
+    get(win, MUIA_Window_Window, &iwin);
+    fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest,
+            ASLFR_TitleText,     (ULONG)"Install into which drawer?",
+            ASLFR_DrawersOnly,   TRUE,
+            ASLFR_InitialDrawer, (ULONG)cur,
+            iwin ? ASLFR_Window : TAG_IGNORE, (ULONG)iwin,
+            ASLFR_SleepWindow,   TRUE,
+            TAG_END);
+    if (!fr) { set_status("Could not open the drawer requester."); return; }
+    if (AslRequest(fr, NULL) && fr->fr_Drawer && fr->fr_Drawer[0]) {
+        snprintf(cmd, sizeof cmd, "%s install %s \"DIR=%s\"", cli_path(), r->id, fr->fr_Drawer);
+        snprintf(verb, sizeof verb, "Install of '%s'", r->id);
+        set_status("Installing...");
+        run_async(cmd, verb);
+    }
+    FreeAslRequest(fr);
+}
+
 static void action_set_dir(void)
 {
     struct FileRequester *fr;
@@ -986,6 +1025,9 @@ static int build_app(void)
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Install",
                     MUIA_Menuitem_Shortcut, (ULONG)"N",
                     MUIA_UserData, ID_INSTALL, End,
+                MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Install To...",
+                    MUIA_Menuitem_Shortcut, (ULONG)"T",
+                    MUIA_UserData, ID_INSTALLTO, End,
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Run",
                     MUIA_UserData, ID_RUN, End,
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Adopt Existing...",
@@ -1469,6 +1511,7 @@ static int gui_run(void)
             case ID_INSTALL: action_install(); break;
             case ID_RUN:     action_run(); break;
             case ID_REMOVE:  action_remove(); break;
+            case ID_INSTALLTO: action_install_to(); break;
             case ID_SETDIR:  action_set_dir(); break;
             case ID_ADOPT:   action_adopt(); break;
             case ID_MUIPREFS:

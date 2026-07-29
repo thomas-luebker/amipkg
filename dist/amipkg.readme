@@ -2,7 +2,7 @@ Short:        Package manager for AmigaOS 3.x
 Author:       thomas@amiga-imager.com (Thomas Luebker)
 Uploader:     thomas@amiga-imager.com (Thomas Luebker)
 Type:         util/sys
-Version:      0.7.1
+Version:      0.7.2
 Requires:     AmigaOS 3.0+, C:lha; bsdsocket.library for downloads
 Architecture: m68k-amigaos >= 3.0
 Distribution: Aminet

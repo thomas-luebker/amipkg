@@ -87,7 +87,8 @@ enum { GID_VIEW = 1, GID_LIST, GID_CHECK, GID_INFO, GID_INSTALL, GID_REMOVE, GID
 enum { MENU_APP = 0, MENU_PACKAGE = 1, MENU_SETTINGS = 2 };
 enum { APP_ABOUT = 0, APP_DOCS = 1, APP_QUIT = 3 };     /* item 2 is the bar */
 enum { PKG_UPDATECAT = 0, PKG_CHECK = 1, PKG_UPGRADE = 2, PKG_INFO = 3, PKG_INSTALL = 4,
-       PKG_ADOPT = 5, PKG_SUBMIT = 6, PKG_REMOVE = 7, PKG_REFRESH = 8 };
+       PKG_INSTALLTO = 5, PKG_ADOPT = 6, PKG_SUBMIT = 7, PKG_REMOVE = 8,
+       PKG_REFRESH = 9 };
 enum { SET_DIR = 0, SET_REPOS = 1 };
 
 /* View modes. */
@@ -151,6 +152,7 @@ static struct NewMenu g_newmenu[] = {
     { NM_ITEM,  (STRPTR)"Update All",    (STRPTR)"U", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Info",          (STRPTR)"I", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Install",       (STRPTR)"N", 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Install To...",  (STRPTR)"T", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Adopt Existing...", NULL,    0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Submit a Package...", NULL,  0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Remove",        (STRPTR)"R", 0, 0, NULL },
@@ -573,11 +575,20 @@ static void rebuild_list(void)
         int have_vidx = gui_load_index(&vidx);
         for (i = 0; i < ninst; i++) {
             const char *v;
+            char vguess[56];
             if (!contains_ci(inst[i].id, g_filter)) continue;
             v = inst[i].version;
             if (have_vidx && aver_is_unknown(v)) {
+                /* No version in the receipt. The catalog's is a GUESS, not a
+                 * fact - mark it "?" so it does not read as what is really
+                 * installed. (djbase, 2026-07-29: an adopted package showed
+                 * the repo's version, then lost it when the repo was
+                 * disabled - because this substitution was silent.) */
                 const aidx_entry *e = aidx_find(&vidx, inst[i].id);
-                if (e && !aver_is_unknown(e->version)) v = e->version;
+                if (e && !aver_is_unknown(e->version)) {
+                    snprintf(vguess, sizeof vguess, "%s?", e->version);
+                    v = vguess;
+                }
             }
             snprintf(label, sizeof label, "%-22s %s", inst[i].id, shown_version(v));
             add_row(label, inst[i].id, NULL);
@@ -1320,6 +1331,37 @@ static void action_set_dir(void)
     FreeAslRequest(fr);
 }
 
+/* Install the selected package into a drawer the user picks, instead of the
+ * one global install dir. The choice is REMEMBERED (config/dir-<id>, the same
+ * file adopt writes), so later upgrades land in the same place. Testers asked
+ * for this: one global drawer is not enough when a tool belongs in C: and
+ * everything else belongs in SYS:Programs. */
+static void action_install_to(void)
+{
+    struct FileRequester *fr;
+    char cur[256], cmd[420], verb[64];
+    const char *id;
+    if (g_busy) { set_status("An operation is already running."); return; }
+    if (g_selected < 0 || (size_t)g_selected >= g_nrows) { set_status("Select a package first."); return; }
+    id = g_rowid[g_selected];
+    if (!AslBase) { set_status("asl.library unavailable - use: amipkg install <id> DIR=<drawer>"); return; }
+    amipkg_get_pkgdir(id, cur, sizeof cur);    /* start where it would go now */
+    fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest,
+            ASLFR_TitleText,     (ULONG)"Install into which drawer?",
+            ASLFR_DrawersOnly,   TRUE,
+            ASLFR_InitialDrawer, (ULONG)cur,
+            TAG_END);
+    if (!fr) { set_status("Could not open the drawer requester."); return; }
+    if (AslRequest(fr, NULL) && fr->fr_Drawer && fr->fr_Drawer[0]) {
+        snprintf(cmd, sizeof cmd, "%s install %s \"DIR=%s\"", cli_path(), id, fr->fr_Drawer);
+        snprintf(verb, sizeof verb, "Install of '%s'", id);
+        FreeAslRequest(fr);
+        run_async(cmd, verb);
+        return;
+    }
+    FreeAslRequest(fr);
+}
+
 static void action_remove(void)
 {
     char cmd[256], body[256], verb[48];
@@ -1714,6 +1756,7 @@ static int dispatch_menu(UWORD menuNum, UWORD itemNum)
         else if (itemNum == PKG_UPGRADE) action_upgrade();
         else if (itemNum == PKG_INFO) action_info();
         else if (itemNum == PKG_INSTALL) action_install();
+        else if (itemNum == PKG_INSTALLTO) action_install_to();
         else if (itemNum == PKG_ADOPT) action_adopt();
         else if (itemNum == PKG_SUBMIT) submit_form();
         else if (itemNum == PKG_REMOVE) action_remove();
