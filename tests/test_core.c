@@ -1,3 +1,8 @@
+/* setenv/unsetenv are POSIX, not C99. Under -std=c99 glibc hides them unless
+ * this is defined BEFORE any include; macOS headers expose them either way,
+ * which is why this only broke on the Linux CI runner. */
+#define _POSIX_C_SOURCE 200112L
+
 /*
  * test_core.c — amipkg portable-core test suite (host-run via clang).
  *
