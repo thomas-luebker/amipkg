@@ -147,11 +147,9 @@ static int arch_eq(const char *a, const char *b)
     return a[i] == '\0' && b[i] == '\0';
 }
 
-int aidx_arch_runs_on(const char *pkg_arch, const char *host_arch)
+/* One architecture token against the host. */
+static int one_arch_runs_on(const char *p, const char *h)
 {
-    const char *p = (pkg_arch && pkg_arch[0]) ? pkg_arch : "m68k-amigaos";
-    const char *h = (host_arch && host_arch[0]) ? host_arch : "m68k-amigaos";
-
     if (arch_eq(p, "generic")) return 1;        /* docs/data: anywhere */
     if (arch_eq(p, h)) return 1;                /* native */
 
@@ -160,5 +158,29 @@ int aidx_arch_runs_on(const char *pkg_arch, const char *host_arch)
         && (arch_eq(h, "ppc-morphos") || arch_eq(h, "ppc-amigaos")))
         return 1;
 
+    return 0;
+}
+
+int aidx_arch_runs_on(const char *pkg_arch, const char *host_arch)
+{
+    const char *h = (host_arch && host_arch[0]) ? host_arch : "m68k-amigaos";
+    const char *p = (pkg_arch && pkg_arch[0]) ? pkg_arch : "m68k-amigaos";
+
+    /* A package may list SEVERAL architectures, comma-separated, exactly as
+     * Aminet readmes do ("m68k-amigaos,ppc-amigaos,ppc-morphos"). It runs here
+     * if ANY of them does. Parsed in place: no allocation, and the field is
+     * bounded. */
+    while (*p) {
+        char tok[32];
+        size_t n = 0;
+        while (*p == ' ' || *p == ',') p++;
+        while (*p && *p != ',' && n < sizeof tok - 1) {
+            if (*p != ' ') tok[n++] = *p;
+            p++;
+        }
+        tok[n] = '\0';
+        if (n && one_arch_runs_on(tok, h)) return 1;
+        while (*p && *p != ',') p++;            /* skip an over-long token */
+    }
     return 0;
 }

@@ -693,6 +693,20 @@ static void test_arch(void)
     CHECK(aidx_arch_runs_on("generic", "ppc-morphos"), "arch: generic on MorphOS");
     CHECK(aidx_arch_runs_on("generic", "i386-aros"), "arch: generic on AROS");
 
+    /* MULTI-ARCH, comma-separated - how real Aminet readmes are written.
+     * imp3handler's own readme says
+     * "m68k-amigaos,ppc-amigaos,ppc-morphos,i386-amithlon". */
+    CHECK(aidx_arch_runs_on("m68k-amigaos,ppc-amigaos,ppc-morphos", "m68k-amigaos"),
+          "arch: multi lists 68k -> runs on 68k");
+    CHECK(aidx_arch_runs_on("m68k-amigaos,ppc-amigaos,ppc-morphos", "ppc-amigaos"),
+          "arch: multi lists OS4 -> runs on OS4");
+    CHECK(aidx_arch_runs_on("ppc-amigaos, ppc-morphos", "ppc-morphos"),
+          "arch: spaces after commas tolerated");
+    CHECK(!aidx_arch_runs_on("ppc-amigaos,ppc-morphos", "i386-aros"),
+          "arch: multi that omits the host is refused");
+    CHECK(aidx_arch_runs_on("i386-amithlon,m68k-amigaos", "ppc-morphos"),
+          "arch: an UNKNOWN token does not spoil a valid one");
+
     /* an unrecognised arch is not silently allowed */
     CHECK(!aidx_arch_runs_on("sparc-solaris", "m68k-amigaos"), "arch: unknown refused");
 }

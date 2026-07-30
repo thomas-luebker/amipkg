@@ -31,10 +31,12 @@ typedef struct {
     char min_cpu[8];           /* "" = any */
     char min_ks[12];           /* requirements.minKS, "" = any (e.g. "3.0") */
     /* requirements.architecture, Aminet's vocabulary ("m68k-amigaos",
-     * "ppc-morphos", "ppc-amigaos", "i386-aros", "generic"). "" means
+     * "ppc-morphos", "ppc-amigaos", "i386-aros", "generic"), and COMMA-
+     * SEPARATED when a package targets several - which is how real Aminet
+     * readmes are written ("m68k-amigaos,ppc-amigaos,ppc-morphos"). "" means
      * m68k-amigaos - the whole catalog predates this field, so absent has to
      * mean the platform everything was written for. */
-    char arch[24];
+    char arch[72];
     aidx_dep deps[AIDX_MAX_DEPS];
     size_t dep_count;
     char provides[AIDX_MAX_PROVIDES][64];

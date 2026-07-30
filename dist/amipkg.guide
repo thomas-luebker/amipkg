@@ -1,5 +1,5 @@
 @database amipkg.guide
-@$VER: amipkg.guide 0.7.5 (30.7.2026)
+@$VER: amipkg.guide 0.7.6 (30.7.2026)
 @author "Thomas Luebker"
 @node MAIN "amipkg - the AmigaPKG package manager"
 
