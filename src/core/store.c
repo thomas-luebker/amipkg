@@ -306,3 +306,41 @@ int amipkg_system_drawer_kind(const char *path)
         if (sd_ci_eq(leaf, tab[i].name)) return tab[i].kind;
     return SD_NONE;
 }
+
+/* Which platform are we actually running on?
+ *
+ * amipkg is an m68k binary, but MorphOS and AmigaOS 4 both execute those (the
+ * MorphOS emulation layer, OS4's Petunia), so it can genuinely find itself on
+ * a machine that is not a classic Amiga. Reporting that honestly is what lets
+ * the catalog carry non-68k packages without offering them to the wrong
+ * machine - and, more usefully, lets a MorphOS user still see the 68k packages
+ * that DO run there.
+ *
+ * Probe order matters: MorphOS also reports a high exec version, so it must be
+ * identified by its own library BEFORE the version test.
+ *
+ * Aminet's vocabulary, so a repo owner writes what they already know. */
+#ifdef __amigaos__
+const char *amipkg_host_arch(void)
+{
+    static const char *cached = NULL;
+    struct Library *l;
+    if (cached) return cached;
+
+    if ((l = OpenLibrary((STRPTR)"morphos.library", 0))) {
+        CloseLibrary(l);
+        cached = "ppc-morphos";
+    } else if ((l = OpenLibrary((STRPTR)"aros.library", 0))) {
+        CloseLibrary(l);
+        cached = "i386-aros";          /* AROS flavour is not distinguished */
+    } else if (SysBase->LibNode.lib_Version >= 50) {
+        /* AmigaOS 4's exec is 52+; 3.x tops out at 47 (3.2). */
+        cached = "ppc-amigaos";
+    } else {
+        cached = "m68k-amigaos";
+    }
+    return cached;
+}
+#else
+const char *amipkg_host_arch(void) { return "m68k-amigaos"; }
+#endif

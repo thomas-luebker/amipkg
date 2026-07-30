@@ -83,6 +83,13 @@ int amipkg_set_pkgdir(const char *id, const char *path);
  * the CLI (ensure_dirs) and BOTH GUIs do. */
 void amipkg_bridge_assigns(void);
 
+/* Which platform this binary is actually running on, in Aminet's vocabulary
+ * ("m68k-amigaos", "ppc-morphos", "ppc-amigaos", "i386-aros"). amipkg is an
+ * m68k binary but MorphOS and AmigaOS 4 both execute those, so it can find
+ * itself somewhere other than a classic Amiga. Lives in the core because ALL
+ * THREE front-ends need it - the GUIs do not link install.c. */
+const char *amipkg_host_arch(void);
+
 /* Is this path a SYSTEM drawer (C:, LIBS:, DEVS:, L:, S:, FONTS:, CLASSES:,
  * PREFS:), and which one? A recipe-less install targeting one of these must
  * place programs FLAT and put the rest beside them - copying a whole archive

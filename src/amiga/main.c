@@ -305,6 +305,11 @@ static int cmd_info(const char *id)
         }
     }
     if (e->added[0]) printf("  added: %s\n", e->added);
+    /* Only worth a line when it is NOT the default everything else is. */
+    if (e->arch[0] && strcmp(aidx_arch(e), "m68k-amigaos") != 0)
+        printf("  architecture: %s%s\n", aidx_arch(e),
+               aidx_arch_runs_on(aidx_arch(e), amipkg_host_arch())
+                   ? "" : " - NOT runnable on this machine");
     if (e->dep_count) {
         printf("  needs:");
         for (i = 0; i < e->dep_count; i++) printf(" %s", e->deps[i].id);
@@ -344,12 +349,28 @@ static int contains_ci(const char *hay, const char *needle)
 
 /* List every package in the seeded index (optionally filtered by a term that
  * matches the id, name, or category), marking what's already installed. */
+/* Case-insensitive whole-word compare, for the ALL keyword. */
+static int ci_eq_word(const char *a, const char *b)
+{
+    size_t i;
+    for (i = 0; a[i] && b[i]; i++) {
+        int ca = (unsigned char)a[i], cb = (unsigned char)b[i];
+        if (ca >= 'A' && ca <= 'Z') ca += 32;
+        if (cb >= 'A' && cb <= 'Z') cb += 32;
+        if (ca != cb) return 0;
+    }
+    return a[i] == '\0' && b[i] == '\0';
+}
+
 static int cmd_avail(const char *filter)
 {
     rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
     aidx_index idx;
     size_t ninst, i;
-    int shown = 0;
+    int shown = 0, hidden = 0;
+    const char *host = amipkg_host_arch();
+    int show_all = 0;
+    if (filter && ci_eq_word(filter, "ALL")) { show_all = 1; filter = NULL; }
     if (load_index(&idx) != 0) return 10;
     ninst = load_installed(inst, MAX_PKGS);
     printf("%-22s %-9s %-14s\n", "Package", "Version", "Category");
@@ -358,12 +379,20 @@ static int cmd_avail(const char *filter)
         if (filter && !(contains_ci(e->id, filter) || contains_ci(e->name, filter)
                         || contains_ci(e->category, filter)))
             continue;
-        printf("%-22s %-9s %-14s %s\n", e->id, e->version[0] ? e->version : "-",
-               e->category, id_installed(inst, ninst, e->id) ? "[installed]" : "");
+        /* Hide what this machine cannot run, and say how many were hidden
+         * rather than silently shrinking the catalog. ALL=show everything. */
+        if (!show_all && !aidx_arch_runs_on(aidx_arch(e), host)) { hidden++; continue; }
+        printf("%-22s %-9s %-14s %s%s\n", e->id, e->version[0] ? e->version : "-",
+               e->category, id_installed(inst, ninst, e->id) ? "[installed]" : "",
+               (show_all && !aidx_arch_runs_on(aidx_arch(e), host))
+                   ? aidx_arch(e) : "");
         shown++;
     }
     if (filter) printf("%d package(s) match \"%s\" (of %lu).\n", shown, filter, (unsigned long)idx.count);
-    else        printf("%lu package(s) available.\n", (unsigned long)idx.count);
+    else        printf("%d package(s) available.\n", shown);
+    if (hidden)
+        printf("%d not runnable on this machine (%s) - 'amipkg avail ALL' shows them.\n",
+               hidden, host);
     aidx_free(&idx);
     return 0;
 }
@@ -767,6 +796,11 @@ static int floors_ok(const aidx_entry *e)
     const char *cpu = amipkg_cpu();
     int ksneed = ks_floor_version(e->min_ks);
     int kshave = amipkg_ks_version();
+    if (!aidx_arch_runs_on(aidx_arch(e), amipkg_host_arch())) {
+        printf("amipkg: '%s' is built for %s; this machine is %s.\n",
+               e->id, aidx_arch(e), amipkg_host_arch());
+        return 0;
+    }
     if (e->min_cpu[0] && cpu[0] && !ares_cpu_satisfies(cpu, e->min_cpu)) {
         printf("amipkg: '%s' needs a %s or better (this machine: %s).\n",
                e->id, e->min_cpu, cpu);
@@ -1646,7 +1680,7 @@ static int dispatch(int argc, char **argv)
     int rc = 5;
     if (argc < 2) {
         printf("amipkg " AMIPKG_VERSION " - the AmigaPKG package manager\n");
-        printf("usage: amipkg update | list | avail [term] | check | doctor | info <id> | fetch <id> | install <id> [DIR=<drawer>] [DRYRUN] | submit <id> <url> [CAT=<Category>] [desc] | adopt <id> <drawer> [<ver>] | upgrade [<id>] | repo ... | dir [<path>] | dir <id> <path> | verify <file> <sha256> | remove <id> [FORCE]\n");
+        printf("usage: amipkg update | list | avail [term|ALL] | check | doctor | info <id> | fetch <id> | install <id> [DIR=<drawer>] [DRYRUN] | submit <id> <url> [CAT=<Category>] [desc] | adopt <id> <drawer> [<ver>] | upgrade [<id>] | repo ... | dir [<path>] | dir <id> <path> | verify <file> <sha256> | remove <id> [FORCE]\n");
         return 5;
     }
     amipkg_ensure_dirs();   /* create AMIPKG:cache + db + config drawers if absent */

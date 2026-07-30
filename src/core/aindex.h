@@ -30,6 +30,11 @@ typedef struct {
     char description[128];     /* short catalog description (truncated) */
     char min_cpu[8];           /* "" = any */
     char min_ks[12];           /* requirements.minKS, "" = any (e.g. "3.0") */
+    /* requirements.architecture, Aminet's vocabulary ("m68k-amigaos",
+     * "ppc-morphos", "ppc-amigaos", "i386-aros", "generic"). "" means
+     * m68k-amigaos - the whole catalog predates this field, so absent has to
+     * mean the platform everything was written for. */
+    char arch[24];
     aidx_dep deps[AIDX_MAX_DEPS];
     size_t dep_count;
     char provides[AIDX_MAX_PROVIDES][64];
@@ -66,5 +71,21 @@ void aidx_free(aidx_index *idx);
 const aidx_entry *aidx_find(const aidx_index *idx, const char *id);
 /* The comparable version string (sortVersion when present). */
 const char *aidx_comparable_version(const aidx_entry *e);
+
+/* The architecture an entry targets, with the default applied ("" ->
+ * m68k-amigaos). Never returns NULL. */
+const char *aidx_arch(const aidx_entry *e);
+
+/* Can a package built for `pkg_arch` run on a machine that is `host_arch`?
+ *
+ * Deliberately INCLUSIVE where the hardware is: MorphOS and AmigaOS 4 both run
+ * m68k binaries (MorphOS's emulation, OS4's Petunia), so a 68k package is
+ * offered there rather than hidden - that is most of the catalog and it works.
+ * The reverse is never true, and AROS on i386/x86_64 runs neither. "generic"
+ * (documentation, data, art) runs anywhere.
+ *
+ * Empty/unknown values are treated as m68k-amigaos, so an old catalog behaves
+ * exactly as before. */
+int aidx_arch_runs_on(const char *pkg_arch, const char *host_arch);
 
 #endif

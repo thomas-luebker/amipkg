@@ -657,6 +657,46 @@ static void test_system_drawer(void)
           "sd: only the LAST component counts");
 }
 
+/* ---- architecture compatibility ------------------------------------------
+ *
+ * djbase asked for an Aminet-style Architecture field so a catalog can serve
+ * more than 68k. The matrix is asymmetric and easy to get backwards, so it is
+ * pinned in both directions here.
+ */
+static void test_arch(void)
+{
+    /* the default: everything that predates the field is m68k */
+    CHECK(aidx_arch_runs_on("", "m68k-amigaos"), "arch: absent == m68k");
+    CHECK(aidx_arch_runs_on(NULL, NULL), "arch: NULLs default to m68k/m68k");
+
+    /* native always runs */
+    CHECK(aidx_arch_runs_on("m68k-amigaos", "m68k-amigaos"), "arch: 68k on 68k");
+    CHECK(aidx_arch_runs_on("ppc-morphos", "ppc-morphos"), "arch: morphos on morphos");
+    CHECK(aidx_arch_runs_on("ppc-amigaos", "ppc-amigaos"), "arch: os4 on os4");
+    CHECK(aidx_arch_runs_on("i386-aros", "i386-aros"), "arch: aros on aros");
+    CHECK(aidx_arch_runs_on("M68K-AmigaOS", "m68k-amigaos"), "arch: case-insensitive");
+
+    /* MorphOS and OS4 RUN 68k binaries - the whole point of being inclusive */
+    CHECK(aidx_arch_runs_on("m68k-amigaos", "ppc-morphos"), "arch: 68k runs on MorphOS");
+    CHECK(aidx_arch_runs_on("m68k-amigaos", "ppc-amigaos"), "arch: 68k runs on OS4");
+
+    /* ...but never the reverse, and AROS/i386 runs neither */
+    CHECK(!aidx_arch_runs_on("ppc-morphos", "m68k-amigaos"), "arch: MorphOS NOT on 68k");
+    CHECK(!aidx_arch_runs_on("ppc-amigaos", "m68k-amigaos"), "arch: OS4 NOT on 68k");
+    CHECK(!aidx_arch_runs_on("ppc-morphos", "ppc-amigaos"), "arch: MorphOS NOT on OS4");
+    CHECK(!aidx_arch_runs_on("ppc-amigaos", "ppc-morphos"), "arch: OS4 NOT on MorphOS");
+    CHECK(!aidx_arch_runs_on("m68k-amigaos", "i386-aros"), "arch: 68k NOT on AROS/i386");
+    CHECK(!aidx_arch_runs_on("ppc-morphos", "i386-aros"), "arch: MorphOS NOT on AROS");
+
+    /* generic (docs, data, art) runs anywhere */
+    CHECK(aidx_arch_runs_on("generic", "m68k-amigaos"), "arch: generic on 68k");
+    CHECK(aidx_arch_runs_on("generic", "ppc-morphos"), "arch: generic on MorphOS");
+    CHECK(aidx_arch_runs_on("generic", "i386-aros"), "arch: generic on AROS");
+
+    /* an unrecognised arch is not silently allowed */
+    CHECK(!aidx_arch_runs_on("sparc-solaris", "m68k-amigaos"), "arch: unknown refused");
+}
+
 int main(void)
 {
     test_sha256();
@@ -670,6 +710,7 @@ int main(void)
     test_arepo();
     test_arepo_merge();
     test_system_drawer();
+    test_arch();
     if (failures == 0) {
         printf("amipkg core: ALL TESTS PASSED\n");
         return 0;

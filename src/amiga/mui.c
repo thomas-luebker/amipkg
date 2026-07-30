@@ -362,7 +362,11 @@ if (gui_load_index(&idx)) {
             for (i = 0; i < norder && g_nrows < MAX_PKGS; i++) {
                 const aidx_entry *e = order[i];
                 Row *r = &g_rows[g_nrows];
-                int ins = id_installed(inst, ninst, e->id);
+                int ins;
+                /* LOCKSTEP with gui.c: hide what this machine cannot run.
+                 * MorphOS/OS4 keep seeing the 68k catalog. */
+                if (!aidx_arch_runs_on(aidx_arch(e), amipkg_host_arch())) continue;
+                ins = id_installed(inst, ninst, e->id);
                 strncpy(r->id, e->id, sizeof r->id - 1); r->id[sizeof r->id - 1] = 0;
                 strcpy(r->flag, ins ? "*" : "");
                 strncpy(r->version, shown_version(e->version), sizeof r->version - 1);
@@ -760,6 +764,8 @@ static void action_info(void)
                               e->category, shown_version(e->version));
         if (e->added[0])
             u += (size_t)snprintf(msg + u, sizeof msg - u, "added: %s\n", e->added);
+        if (e->arch[0] && strcmp(aidx_arch(e), "m68k-amigaos") != 0)
+            u += (size_t)snprintf(msg + u, sizeof msg - u, "architecture: %s\n", aidx_arch(e));
         {   /* Which repository this came from. Quiet in the single-repo
              * default, where it would only be noise. LOCKSTEP with gui.c. */
             arepo_list rl; arepo_load(&rl);

@@ -194,6 +194,31 @@ Points that matter:
   the catalog has to be at the repo URL. Optional `archive.mirrors` takes a list
   of fallback URLs.
 
+### Packages for MorphOS, AmigaOS 4 or AROS
+
+By default every entry is assumed to be `m68k-amigaos` — the whole catalog
+predates the field, so absent has to mean the platform everything was written
+for. To publish for another platform, say so:
+
+```json
+"requirements": { "architecture": "ppc-morphos" }
+```
+
+Aminet's vocabulary: `m68k-amigaos`, `ppc-morphos`, `ppc-amigaos` (OS4),
+`i386-aros` / `x86_64-aros` / `ppc-aros` / `arm-aros`, `ppc-warpup`,
+`ppc-powerup`, and `generic` for documentation or data that runs anywhere.
+
+amipkg detects what it is running on and hides packages that machine cannot
+use, refusing to install one if asked directly. Two things worth knowing:
+
+- **MorphOS and AmigaOS 4 still see the whole 68k catalog**, because both run
+  m68k binaries. The filter removes only what is genuinely unusable.
+- `amipkg avail ALL` shows everything regardless, with the architecture
+  named — so nothing is hidden without a way to look.
+
+A value outside the list above is a validation **error**, not a warning: an
+unrecognised architecture would silently hide the package from every machine.
+
 ### Check it before you publish
 
 Do not find out on the Amiga. `amipkg-repo-sign` validates the catalog as it

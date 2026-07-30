@@ -636,6 +636,11 @@ static void rebuild_list(void)
                 qsort(order, norder, sizeof order[0], cmp_recent);
             for (i = 0; i < norder; i++) {
                 const aidx_entry *e = order[i];
+                /* Hide what this machine cannot run (djbase's Architecture
+                 * request). MorphOS/OS4 still see the 68k catalog - see
+                 * aidx_arch_runs_on - so this only removes the genuinely
+                 * unusable. */
+                if (!aidx_arch_runs_on(aidx_arch(e), amipkg_host_arch())) continue;
                 /* Leading marker so installed state is scannable at a glance. */
                 snprintf(label, sizeof label, "%s %-18s %-8s %s",
                          id_installed(inst, ninst, e->id) ? "*" : " ",
@@ -825,6 +830,8 @@ static void action_info(void)
         if (e->added[0])
             u += (size_t)snprintf(msg + u, sizeof msg - u, "added: %s\n", e->added);
         u += (size_t)snprintf(msg + u, sizeof msg - u, "installed: %s\n", ins ? insver : "(not installed)");
+        if (e->arch[0] && strcmp(aidx_arch(e), "m68k-amigaos") != 0)
+            u += (size_t)snprintf(msg + u, sizeof msg - u, "architecture: %s\n", aidx_arch(e));
         {   /* Which repository this came from. Quiet in the single-repo
              * default, where it would only be noise. */
             arepo_list rl; arepo_load(&rl);

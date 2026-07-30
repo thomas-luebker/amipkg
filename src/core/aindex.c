@@ -30,6 +30,7 @@ static void parse_entry(const aj_node *e, aidx_entry *out)
     if (reqs) {
         copy_str(out->min_cpu, sizeof out->min_cpu, ajson_get_str(reqs, "minCPU", ""));
         copy_str(out->min_ks, sizeof out->min_ks, ajson_get_str(reqs, "minKS", ""));
+        copy_str(out->arch, sizeof out->arch, ajson_get_str(reqs, "architecture", ""));
     }
 
     arr = ajson_get(e, "deps");
@@ -123,4 +124,41 @@ const aidx_entry *aidx_find(const aidx_index *idx, const char *id)
 const char *aidx_comparable_version(const aidx_entry *e)
 {
     return e->sort_version[0] ? e->sort_version : e->version;
+}
+
+/* ---- architecture ------------------------------------------------------- */
+
+const char *aidx_arch(const aidx_entry *e)
+{
+    if (!e || !e->arch[0]) return "m68k-amigaos";
+    return e->arch;
+}
+
+static int arch_eq(const char *a, const char *b)
+{
+    size_t i;
+    if (!a || !b) return 0;
+    for (i = 0; a[i] && b[i]; i++) {
+        int ca = (unsigned char)a[i], cb = (unsigned char)b[i];
+        if (ca >= 'A' && ca <= 'Z') ca += 32;
+        if (cb >= 'A' && cb <= 'Z') cb += 32;
+        if (ca != cb) return 0;
+    }
+    return a[i] == '\0' && b[i] == '\0';
+}
+
+int aidx_arch_runs_on(const char *pkg_arch, const char *host_arch)
+{
+    const char *p = (pkg_arch && pkg_arch[0]) ? pkg_arch : "m68k-amigaos";
+    const char *h = (host_arch && host_arch[0]) ? host_arch : "m68k-amigaos";
+
+    if (arch_eq(p, "generic")) return 1;        /* docs/data: anywhere */
+    if (arch_eq(p, h)) return 1;                /* native */
+
+    /* MorphOS and AmigaOS 4 run m68k binaries; nothing runs theirs. */
+    if (arch_eq(p, "m68k-amigaos")
+        && (arch_eq(h, "ppc-morphos") || arch_eq(h, "ppc-amigaos")))
+        return 1;
+
+    return 0;
 }
