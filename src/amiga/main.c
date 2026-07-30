@@ -749,6 +749,42 @@ static void receipt_record_file(const char *id, const char *path)
 
 static int cmd_remove(const char *id, int force);   /* defined below */
 
+/* Amiga filesystems are case-insensitive - compare recorded paths that way. */
+static int ci_path_eq(const char *a, const char *b)
+{
+    size_t i = 0;
+    for (;;) {
+        char ca = a[i], cb = b[i];
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + 32);
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + 32);
+        if (ca != cb) return 0;
+        if (!ca) return 1;
+        i++;
+    }
+}
+
+/* Drop a package's receipt (inventory + installed line) WITHOUT touching a
+ * single file on disk. Used by the in-place self-upgrade: the old files must
+ * survive until their replacements are written, but the record of them has to
+ * go so the post-install append leaves exactly one entry. */
+static void receipt_forget(const char *id)
+{
+    rcpt_installed *inst = amipkg_inst_scratch;
+    size_t n = load_installed(inst, MAX_PKGS), i;
+    char rp[AMIPKG_PREFIX_MAX + 32], line[192];
+    FILE *f;
+    snprintf(rp, sizeof rp, "%sdb/files/%s.files", amipkg_prefix(), id);
+    remove(rp);
+    f = fopen(amipkg_data_path("db/installed.txt"), "wb");
+    if (!f) return;
+    for (i = 0; i < n; i++) {
+        if (strcmp(inst[i].id, id) == 0) continue;
+        rcpt_format_installed_line(&inst[i], line, sizeof line);
+        fprintf(f, "%s\n", line);
+    }
+    fclose(f);
+}
+
 /* Is `id` recorded in the installed receipt DB? */
 static int pkg_installed(const char *id)
 {
@@ -856,8 +892,13 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
                                 runs sequentially, never nested */
     char archive[256];
     static char paths[256][256];
+    static rcpt_file prev_files[MAX_FILES];   /* self-upgrade prune list */
+    size_t n_prev = 0;
     size_t n, i;
     int rc;
+    /* Replacing the running program is the one upgrade that cannot afford a
+     * gap where nothing is installed - see the in-place path below. */
+    const int self_upgrade = strcmp(e->id, "amipkg") == 0;
 
     tree = NULL;
     if (!e->archive_url[0]) {
@@ -918,8 +959,24 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
         if (tree) ajson_free(tree); return 10;
     }
     if (pkg_installed(e->id)) {
-        printf("Upgrading %s - removing the previous version...\n", e->id);
-        cmd_remove(e->id, 1 /*force: an upgrade replaces its own files*/);
+        if (self_upgrade) {
+            /* Upgrading the program that is RUNNING. Removing first would mean
+             * a window with no amipkg on the machine at all and no second copy
+             * anywhere - and anything that then goes wrong in the copy phase
+             * leaves the user with nothing (A4000 report, 2026-07-30: a GUI
+             * erased from under itself mid-update). So: install straight over
+             * the previous version and prune the leftovers AFTERWARDS, once
+             * the replacement is known to be on disk. The receipt is cleared
+             * here so the post-install record has exactly one entry; the FILES
+             * stay put until they are either overwritten or pruned. */
+            n_prev = load_files_for(e->id, prev_files, MAX_FILES);
+            printf("Upgrading %s in place (the previous version stays until "
+                   "the new one is installed)...\n", e->id);
+            receipt_forget(e->id);
+        } else {
+            printf("Upgrading %s - removing the previous version...\n", e->id);
+            cmd_remove(e->id, 1 /*force: an upgrade replaces its own files*/);
+        }
     }
     if (e->has_recipe) {
         root = getenv("AMIPKG_ROOT"); if (!root || !root[0]) root = "SYS:";
@@ -973,6 +1030,27 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
     }
     if (!generic_recorded)
         for (i = 0; i < n; i++) receipt_record_file(e->id, paths[i]);
+    /* In-place self-upgrade: the replacement is on disk now, so anything the
+     * old version shipped and the new one doesn't can go. Deliberately narrow -
+     * prune ONLY inside our own install prefix. A stale file left elsewhere is
+     * harmless; deleting something outside the home on the strength of an old
+     * inventory is how a running binary gets erased, which is the whole reason
+     * this path exists. Non-absolute (legacy PROGDIR:) lines are never pruned. */
+    if (self_upgrade && n_prev) {
+        size_t p, q, prefix_len = strlen(amipkg_prefix());
+        int pruned = 0;
+        for (p = 0; p < n_prev; p++) {
+            const char *old = prev_files[p].path;
+            int still_shipped = 0;
+            if (!strchr(old, ':')) continue;                       /* not absolute */
+            if (strncmp(old, amipkg_prefix(), prefix_len) != 0) continue;  /* outside */
+            for (q = 0; q < n && !still_shipped; q++)
+                if (ci_path_eq(old, paths[q])) still_shipped = 1;
+            if (!still_shipped && remove(old) == 0) pruned++;
+        }
+        if (pruned)
+            printf("Removed %d file(s) the new version no longer ships.\n", pruned);
+    }
     /* Self-update: also refresh the binaries actually in use (own program
      * drawer + legacy C:/SYS:Tools homes) - see amipkg_selfupdate_mirror.
      * The NOTE line doubles as the GUIs' restart-requester marker - keep

@@ -2,7 +2,7 @@
 # release-client.sh — the ONE command for an amipkg client release.
 #
 #   amipkg/release-client.sh 0.5.8 [--notes "..."] [--notes-file f]
-#                                  [--dry-run] [--no-commit] [--aminet] [--no-smoke]
+#                                  [--dry-run] [--no-commit] [--aminet|--aminet-force] [--no-smoke]
 #
 # Automates the full chain that was done by hand five times on 2026-07-27
 # (and misfired once): version bump -> CLEAN cross-build -> $VER verify of
@@ -36,7 +36,7 @@ AMINET_EMAIL="${AMINET_EMAIL:-thomas@amiga-imager.com}"
 VER="${1:-}"; shift || true
 case "$VER" in
     [0-9]*.[0-9]*.[0-9]*) ;;
-    *) echo "usage: release-client.sh <version, e.g. 0.5.8> [--notes ...] [--notes-file f] [--dry-run] [--no-commit] [--aminet] [--no-smoke]"; exit 1 ;;
+    *) echo "usage: release-client.sh <version, e.g. 0.5.8> [--notes ...] [--notes-file f] [--dry-run] [--no-commit] [--aminet|--aminet-force] [--no-smoke]"; exit 1 ;;
 esac
 
 NOTES=""; NOTES_FILE=""; DRY=0; COMMIT=1; AMINET=0; SMOKE=1
@@ -47,6 +47,7 @@ while [ $# -gt 0 ]; do
         --dry-run)    DRY=1; shift ;;
         --no-commit)  COMMIT=0; shift ;;
         --aminet)     AMINET=1; shift ;;
+        --aminet-force) AMINET=1; AMINET_FORCE=1; shift ;;
         --no-smoke)   SMOKE=0; shift ;;
         *) echo "unknown option: $1"; exit 1 ;;
     esac
@@ -176,12 +177,35 @@ if [ "$COMMIT" = 1 ]; then
 fi
 
 # --- 8. optional Aminet ------------------------------------------------------
+# RATE-LIMITED ON PURPOSE. Every upload lands on a volunteer moderator's desk,
+# and on 2026-07-30 four releases went up inside a day (0.7.3-0.7.6) simply
+# because --aminet was passed each time. Uploads overwrite each other in /new,
+# so the damage was bounded, but Aminet is for releases users should notice -
+# not for every point fix. Publish to the catalog freely; batch for Aminet.
+#
+# Override for a genuinely urgent fix:  --aminet-force  (or AMINET_MIN_DAYS=0)
+AMINET_STATE="$HERE/dist/.aminet-last"
+AMINET_MIN_DAYS="${AMINET_MIN_DAYS:-7}"
+if [ "$AMINET" = 1 ] && [ "$AMINET_FORCE" != 1 ] && [ -f "$AMINET_STATE" ]; then
+    last_epoch="$(awk -F'|' 'NR==1{print $2}' "$AMINET_STATE" 2>/dev/null)"
+    last_ver="$(awk -F'|' 'NR==1{print $1}' "$AMINET_STATE" 2>/dev/null)"
+    if [ -n "$last_epoch" ]; then
+        age_days=$(( ( $(date +%s) - last_epoch ) / 86400 ))
+        if [ "$age_days" -lt "$AMINET_MIN_DAYS" ]; then
+            AMINET=0
+            echo "==> Aminet upload SKIPPED: $last_ver went up ${age_days}d ago (min ${AMINET_MIN_DAYS}d)."
+            echo "    Aminet is for releases users should notice; the catalog already has $VER."
+            echo "    Genuinely urgent? re-run with --aminet-force"
+        fi
+    fi
+fi
 if [ "$AMINET" = 1 ]; then
     cp "$HERE/dist/amipkg.readme" "$BUILDDIR/amipkg.readme"
     ( cd "$BUILDDIR" \
         && curl -sS --max-time 300 -T amipkg.lha "ftp://main.aminet.net/new/amipkg.lha" --user "anonymous:$AMINET_EMAIL" \
         && curl -sS --max-time 60 -T amipkg.readme "ftp://main.aminet.net/new/amipkg.readme" --user "anonymous:$AMINET_EMAIL" ) \
-        && echo "    Aminet /new updated" || echo "    NOTE: Aminet upload failed - retry manually"
+        && { echo "    Aminet /new updated"; printf '%s|%s\n' "$VER" "$(date +%s)" > "$AMINET_STATE"; } \
+        || echo "    NOTE: Aminet upload failed - retry manually"
 fi
 
 echo "==> amipkg $VER RELEASED: gh v$VER · pin $SHA · mirror verified"

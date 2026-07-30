@@ -16,11 +16,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The resolved data prefix. It is an ABSOLUTE path since 0.4.7 (not the short
- * "AMIPKG:"), so every buffer built from it must be sized off this - GCC's
- * -Wformat-truncation caught three that were still sized for the old short
- * form. */
-#define AMIPKG_PREFIX_MAX 300
+/* AMIPKG_PREFIX_MAX lives in store.h: the rule "every buffer built from the
+ * prefix must be sized off it" applies to callers too, and they cannot follow
+ * a constant they can't see. */
 
 char *read_file(const char *path)
 {

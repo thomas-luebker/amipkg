@@ -24,13 +24,19 @@
  *               CLI lives in C: and the data under the boot-time assign
  *               (created from AMIGAIMAGER: on 0.99-era images).
  * Use amipkg_data_path("db/installed.txt") for a ready-to-open path, or
- * printf-style "%sdb/files/%s.files", amipkg_prefix(), id. */
+ * printf-style "%sdb/files/%s.files", amipkg_prefix(), id.
+ * The prefix is an ABSOLUTE path since 0.4.7 (not the short "AMIPKG:"), so
+ * EVERY buffer built from it must be sized off AMIPKG_PREFIX_MAX - callers
+ * included; -Wformat-truncation once caught three sized for the old short
+ * form. Paths derived from it are also what belongs in a persisted receipt:
+ * "PROGDIR:" resolves per-process and must never be written to one. */
+#define AMIPKG_PREFIX_MAX 300
 const char *amipkg_prefix(void);
 char *amipkg_data_path(const char *rel);
 
 /* THE version - single source for $VER tags, About boxes, the UA string
  * and the self-seeded receipt. Bump HERE (plus the catalog entry). */
-#define AMIPKG_VERSION "0.7.6"
+#define AMIPKG_VERSION "0.7.7"
 #define AMIPKG_VERDATE "30.7.2026"
 
 #define AMIPKG_DEFAULT_INSTALLDIR "SYS:Programs"

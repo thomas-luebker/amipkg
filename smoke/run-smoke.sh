@@ -78,6 +78,10 @@ AMIPKG:amipkg remove $PKG >>SMOKE:results.txt
 Echo "rc_remove=\$RC" >>SMOKE:results.txt
 Echo "--- installed.txt after remove ---" >>SMOKE:results.txt
 Type AMIPKG:db/installed.txt >>SMOKE:results.txt
+Echo "--- amipkg's own inventory must be ABSOLUTE, never PROGDIR: ---" >>SMOKE:results.txt
+Echo "PROGDIR:amipkg" >AMIPKG:db/files/amipkg.files
+AMIPKG:amipkg list >NIL:
+Type AMIPKG:db/files/amipkg.files >>SMOKE:results.txt
 Echo "SMOKE-DONE" >>SMOKE:results.txt
 Echo "done" >SMOKE:done-marker
 SS
@@ -133,6 +137,13 @@ else
 fi
 assert_contains "rc_remove=0"   "amipkg remove $PKG succeeded"
 assert_absent_after "receipt gone after remove"
+# A receipt outlives the process that wrote it, so a PROGDIR: path in one
+# resolves against whatever program reads it later - and an upgrade DELETES the
+# recorded paths. That combination erased a running GUI on an A4000 (0.7.7).
+# A planted PROGDIR: line must be gone by the next start.
+if sed -n '/--- amipkg.s own inventory/,$p' "$RESULTS" | grep -q "^PROGDIR:"; then
+    echo "    FAIL: amipkg inventory still holds a per-process PROGDIR: path" >&2; ok=0
+else echo "    ok: amipkg inventory migrated to absolute paths"; fi
 assert_contains "SMOKE-DONE"    "gauntlet completed"
 
 echo "---- results.txt ----"

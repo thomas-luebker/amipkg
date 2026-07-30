@@ -187,6 +187,52 @@ void amipkg_make_dir(const char *path) { ensure_one(path); }
  * "up to date" forever (tester report). Runs on every CLI start: appends
  * the entry when missing, bumps it when this binary is NEWER than the
  * recorded version (manual updates). Never touches files. */
+/* Write amipkg's own file inventory, ABSOLUTELY.
+ *
+ * This used to record "PROGDIR:amipkg" and friends. A receipt outlives the
+ * process that wrote it, and PROGDIR: is per-process: read back by a LATER
+ * amipkg (the CLI the GUI shells out to, say), those lines resolve against
+ * THAT program's drawer. Since an upgrade deletes the recorded paths, a
+ * receipt seeded in one drawer could delete the app in another - a running
+ * GUI erased from under itself (A4000 report, 2026-07-30). The prefix is
+ * already absolute for exactly this reason (see amipkg_prefix) - the receipt
+ * has to be too, and it is the prefix the recipe installs into, so the two
+ * now describe the same files by the same names. */
+static void seed_amipkg_file_inventory(void)
+{
+    static const char *bins[] = { "amipkg", "amipkg-gui", "amipkg-gui.info",
+                                  "amipkg-mui", "amipkg-mui.info", "amipkg.guide", 0 };
+    char probe[AMIPKG_PREFIX_MAX + 32];
+    FILE *f = fopen(amipkg_data_path("db/files/amipkg.files"), "w");
+    size_t i;
+    if (!f) return;
+    for (i = 0; bins[i]; i++) {
+        BPTR l;
+        snprintf(probe, sizeof probe, "%s%s", amipkg_prefix(), bins[i]);
+        l = Lock((STRPTR)probe, ACCESS_READ);
+        if (l) { UnLock(l); fprintf(f, "%s\n", probe); }
+    }
+    fclose(f);
+}
+
+/* Repair an inventory seeded by an older amipkg: any PROGDIR:-relative line is
+ * a live hazard on every machine that already has one, so rewrite the whole
+ * file from the resolved prefix. Cheap, idempotent, and runs before anything
+ * can act on those paths. */
+static void migrate_progdir_inventory(void)
+{
+    char rp[AMIPKG_PREFIX_MAX + 32], ln[400];
+    FILE *f;
+    int poisoned = 0;
+    snprintf(rp, sizeof rp, "%sdb/files/amipkg.files", amipkg_prefix());
+    f = fopen(rp, "r");
+    if (!f) return;
+    while (fgets(ln, sizeof ln, f))
+        if (strncmp(ln, "PROGDIR:", 8) == 0) { poisoned = 1; break; }
+    fclose(f);
+    if (poisoned) seed_amipkg_file_inventory();
+}
+
 static void selfseed_receipt(void)
 {
     rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
@@ -207,19 +253,7 @@ static void selfseed_receipt(void)
     if (have < 0) {
         FILE *f = fopen(amipkg_data_path("db/installed.txt"), "a");
         if (f) { fprintf(f, "amipkg|%s|1|0\n", AMIPKG_VERSION); fclose(f); }
-        f = fopen(amipkg_data_path("db/files/amipkg.files"), "w");
-        if (f) {
-            static const char *bins[] = { "amipkg", "amipkg-gui", "amipkg-gui.info",
-                                          "amipkg-mui", "amipkg-mui.info", "amipkg.guide", 0 };
-            char probe[64];
-            for (i = 0; bins[i]; i++) {
-                BPTR l;
-                snprintf(probe, sizeof probe, "PROGDIR:%s", bins[i]);
-                l = Lock((STRPTR)probe, ACCESS_READ);
-                if (l) { UnLock(l); fprintf(f, "%s\n", probe); }
-            }
-            fclose(f);
-        }
+        seed_amipkg_file_inventory();
     } else {
         /* Receipt disagrees with this binary (either direction): rewrite. */
         FILE *f = fopen(amipkg_data_path("db/installed.txt"), "wb");
@@ -244,6 +278,7 @@ void amipkg_ensure_dirs(void)
     ensure_one(amipkg_data_path("db/files"));
     ensure_one(amipkg_data_path("db/scripts"));
     ensure_one(amipkg_data_path("db/assigns"));
+    migrate_progdir_inventory();   /* before anything can act on those paths */
     selfseed_receipt();
 }
 
