@@ -80,15 +80,15 @@ static void init_list(struct List *l)
 /* Gadget IDs */
 enum { GID_VIEW = 1, GID_LIST, GID_CHECK, GID_INFO, GID_INSTALL, GID_REMOVE, GID_REFRESH,
        GID_STATUS, GID_SEARCH, GID_UPGRADE, GID_PROGRESS, GID_UPDATE, GID_RUN,
-       GID_CAT, GID_SORT, GID_ADOPT };
+       GID_CAT, GID_SORT, GID_ADOPT, GID_UPDATE1 };
 
 /* Menu numbering (must match g_newmenu below). */
 /* Menu/item numbers are POSITIONAL - they must track g_newmenu exactly. */
 enum { MENU_APP = 0, MENU_PACKAGE = 1, MENU_SETTINGS = 2 };
 enum { APP_ABOUT = 0, APP_DOCS = 1, APP_QUIT = 3 };     /* item 2 is the bar */
 enum { PKG_UPDATECAT = 0, PKG_CHECK = 1, PKG_UPGRADE = 2, PKG_INFO = 3, PKG_INSTALL = 4,
-       PKG_INSTALLTO = 5, PKG_ADOPT = 6, PKG_SUBMIT = 7, PKG_REMOVE = 8,
-       PKG_REFRESH = 9 };
+       PKG_INSTALLTO = 5, PKG_UPDATE1 = 6, PKG_ADOPT = 7, PKG_SUBMIT = 8,
+       PKG_REMOVE = 9, PKG_REFRESH = 10 };
 enum { SET_DIR = 0, SET_REPOS = 1 };
 
 /* View modes. */
@@ -153,6 +153,7 @@ static struct NewMenu g_newmenu[] = {
     { NM_ITEM,  (STRPTR)"Info",          (STRPTR)"I", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Install",       (STRPTR)"N", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Install To...",  (STRPTR)"T", 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Update",         (STRPTR)"G", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Adopt Existing...", NULL,    0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Submit a Package...", NULL,  0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Remove",        (STRPTR)"R", 0, 0, NULL },
@@ -480,6 +481,9 @@ static void status_count(void)
 }
 
 static int selection_installed(void);   /* defined below */
+static int selection_has_update(void);  /* defined below */
+static int pkg_has_update(const rcpt_installed *inst, size_t ninst,
+                          const aidx_entry *e);   /* defined below */
 
 /* Info: any selection. Install: Available view + selection. Remove/Run:
  * installed selection. Everything mutating is locked while an async op runs. */
@@ -502,6 +506,9 @@ static void update_action_state(void)
     if (g_gads[GID_ADOPT])
         GT_SetGadgetAttrs(g_gads[GID_ADOPT], g_win, NULL,
                           GA_Disabled, (!busy && sel) ? FALSE : TRUE, TAG_END);
+    if (g_gads[GID_UPDATE1])
+        GT_SetGadgetAttrs(g_gads[GID_UPDATE1], g_win, NULL,
+                          GA_Disabled, (!busy && sel && selection_has_update()) ? FALSE : TRUE, TAG_END);
     if (g_gads[GID_UPDATE])
         GT_SetGadgetAttrs(g_gads[GID_UPDATE], g_win, NULL, GA_Disabled, busy ? TRUE : FALSE, TAG_END);
     if (g_gads[GID_UPGRADE])
@@ -590,7 +597,12 @@ static void rebuild_list(void)
                     v = vguess;
                 }
             }
-            snprintf(label, sizeof label, "%-22s %s", inst[i].id, shown_version(v));
+            {   /* flag the ones worth acting on, same test as the button */
+                const aidx_entry *ce = have_vidx ? aidx_find(&vidx, inst[i].id) : NULL;
+                snprintf(label, sizeof label, "%-22s %-10s %s",
+                         inst[i].id, shown_version(v),
+                         pkg_has_update(inst, ninst, ce) ? "UPDATE" : "");
+            }
             add_row(label, inst[i].id, NULL);
         }
         if (have_vidx) aidx_free(&vidx);
@@ -598,14 +610,14 @@ static void rebuild_list(void)
          * the filter cycle is populated before the first switch to Available. */
         if (g_ncats == 0) {
             aidx_index idx;
-if (gui_load_index(&idx)) {
+            if (gui_load_index(&idx)) {
                 for (i = 0; i < idx.count; i++) note_category(idx.entries[i].category);
                 aidx_free(&idx);
             }
-            }
+        }
     } else {
         aidx_index idx;
-if (gui_load_index(&idx)) {
+        if (gui_load_index(&idx)) {
             static const aidx_entry *order[MAX_PKGS * 2];
             size_t norder = 0;
             const char *want_cat = g_cat_sel > 0 && (size_t)(g_cat_sel - 1) < g_ncats
@@ -628,7 +640,8 @@ if (gui_load_index(&idx)) {
                 snprintf(label, sizeof label, "%s %-18s %-8s %s",
                          id_installed(inst, ninst, e->id) ? "*" : " ",
                          e->id, shown_version(e->version),
-                         id_installed(inst, ninst, e->id) ? "installed" : "");
+                         pkg_has_update(inst, ninst, e) ? "UPDATE"
+                             : (id_installed(inst, ninst, e->id) ? "installed" : ""));
                 add_row(label, e->id, e->description);
             }
             aidx_free(&idx);
@@ -636,6 +649,40 @@ if (gui_load_index(&idx)) {
             set_status("No catalog yet - click Update Catalog.");
         }
     }
+}
+
+/* Is a NEWER version available for `id` than what the receipt records?
+ *
+ * "Update All" has always existed, but there was no way to update ONE package
+ * from the GUI even though the CLI has taken `upgrade <id>` all along. This is
+ * what makes the per-package button meaningful: it lights up only when there is
+ * something to do, and the same test marks the row. An unknown installed
+ * version ("-") is never "outdated" - aver_is_newer already refuses those. */
+static int pkg_has_update(const rcpt_installed *inst, size_t ninst,
+                          const aidx_entry *e)
+{
+    size_t k;
+    if (!e) return 0;
+    for (k = 0; k < ninst; k++) {
+        if (strcmp(inst[k].id, e->id) != 0) continue;
+        return aver_is_newer(e->version, inst[k].version);
+    }
+    return 0;                                  /* not installed */
+}
+
+/* Does the SELECTED row have an update available? */
+static int selection_has_update(void)
+{
+    rcpt_installed *inst = amipkg_inst_scratch;
+    size_t ninst;
+    aidx_index idx;
+    int yes = 0;
+    if (g_selected < 0 || (size_t)g_selected >= g_nrows) return 0;
+    ninst = load_installed(inst, MAX_PKGS);
+    if (!gui_load_index(&idx)) return 0;
+    yes = pkg_has_update(inst, ninst, aidx_find(&idx, g_rowid[g_selected]));
+    aidx_free(&idx);
+    return yes;
 }
 
 /* Is the currently-selected row an installed package (receipt DB)? */
@@ -1362,6 +1409,21 @@ static void action_install_to(void)
     FreeAslRequest(fr);
 }
 
+/* Update just the selected package: the CLI has taken `upgrade <id>` since
+ * 0.4, the GUI simply never offered it. */
+static void action_update_selected(void)
+{
+    char cmd[300], verb[64];
+    const char *id;
+    if (g_busy) { set_status("An operation is already running."); return; }
+    if (g_selected < 0 || (size_t)g_selected >= g_nrows) { set_status("Select a package first."); return; }
+    id = g_rowid[g_selected];
+    snprintf(cmd, sizeof cmd, "%s upgrade %s", cli_path(), id);
+    snprintf(verb, sizeof verb, "Update of '%s'", id);
+    set_status("Updating...");
+    run_async(cmd, verb);
+}
+
 static void action_remove(void)
 {
     char cmd[256], body[256], verb[48];
@@ -1628,6 +1690,7 @@ static struct Gadget *build_gadgets(void)
             {(UBYTE *)"Update Catalog", GID_UPDATE, 0},
             {(UBYTE *)"Check Updates", GID_CHECK,   0},
             {(UBYTE *)"Update All",    GID_UPGRADE, 0},
+            {(UBYTE *)"Update",        GID_UPDATE1, 1},
             {(UBYTE *)"Info",          GID_INFO,    1},
             {(UBYTE *)"Install",       GID_INSTALL, 1},
             {(UBYTE *)"Run",           GID_RUN,     1},
@@ -1757,6 +1820,7 @@ static int dispatch_menu(UWORD menuNum, UWORD itemNum)
         else if (itemNum == PKG_INFO) action_info();
         else if (itemNum == PKG_INSTALL) action_install();
         else if (itemNum == PKG_INSTALLTO) action_install_to();
+        else if (itemNum == PKG_UPDATE1) action_update_selected();
         else if (itemNum == PKG_ADOPT) action_adopt();
         else if (itemNum == PKG_SUBMIT) submit_form();
         else if (itemNum == PKG_REMOVE) action_remove();
@@ -1830,6 +1894,7 @@ static void event_loop(void)
                 case GID_UPDATE:  action_update_catalog(); break;
                 case GID_CHECK:   action_check();   break;
                 case GID_UPGRADE: action_upgrade(); break;
+                case GID_UPDATE1: action_update_selected(); break;
                 case GID_INFO:    action_info();    break;
                 case GID_INSTALL: action_install(); break;
                 case GID_REMOVE:  action_remove();  break;

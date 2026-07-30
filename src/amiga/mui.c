@@ -73,7 +73,7 @@ enum {
     ID_UPDATE = 1, ID_CHECK, ID_UPALL, ID_INFO, ID_INSTALL, ID_RUN,
     ID_REMOVE, ID_REFRESH, ID_SETDIR, ID_ABOUT, ID_ADOPT, ID_DOCS, ID_SUBMIT,
     ID_SUBMIT_GO,
-    ID_MUIPREFS, ID_INSTALLTO,
+    ID_MUIPREFS, ID_INSTALLTO, ID_UPDATE1,
     ID_REPOS, ID_REPO_ADD, ID_REPO_ADDGO, ID_REPO_REMOVE, ID_REPO_TOGGLE,
     ID_REPO_UP, ID_REPO_DOWN,
     ID_VIEW, ID_CAT, ID_SORT, ID_FIND, ID_SELECT, ID_DCLICK
@@ -126,7 +126,7 @@ static arepo_list g_repos;
 static char g_repolabels[AREPO_MAX][90];
 
 static Object *txt_status, *txt_progress, *txt_desc, *txt_counts;
-static Object *bt_update, *bt_check, *bt_upall, *bt_info, *bt_install,
+static Object *bt_update, *bt_check, *bt_upall, *bt_upone, *bt_info, *bt_install,
               *bt_run, *bt_remove, *bt_adopt, *bt_refresh;
 
 /* ---- async op state (same protocol as gui.c) ------------------------------ */
@@ -293,6 +293,9 @@ static struct Hook disp_hook;
 
 /* ---- model rebuild -------------------------------------------------------- */
 
+static int pkg_has_update(const rcpt_installed *inst, size_t ninst,
+                          const aidx_entry *e);   /* defined below */
+
 static void rebuild_list(void)
 {
     rcpt_installed *inst = amipkg_inst_scratch;   /* shared scratch, see store.h */
@@ -332,7 +335,8 @@ static void rebuild_list(void)
             }
             strncpy(r->version, shown_version(v), sizeof r->version - 1);
             r->version[sizeof r->version - 1] = 0;
-            strcpy(r->status, "installed");
+            {   const aidx_entry *ce = have_vidx ? aidx_find(&vidx, inst[i].id) : NULL;
+                strcpy(r->status, pkg_has_update(inst, ninst, ce) ? "UPDATE" : "installed"); }
             r->desc[0] = 0;
             DoMethod(lst, MUIM_List_InsertSingle, (ULONG)r, MUIV_List_Insert_Bottom);
             g_nrows++;
@@ -363,7 +367,8 @@ if (gui_load_index(&idx)) {
                 strcpy(r->flag, ins ? "*" : "");
                 strncpy(r->version, shown_version(e->version), sizeof r->version - 1);
                 r->version[sizeof r->version - 1] = 0;
-                strcpy(r->status, ins ? "installed" : "");
+                strcpy(r->status, pkg_has_update(inst, ninst, e) ? "UPDATE"
+                                    : (ins ? "installed" : ""));
                 strncpy(r->desc, e->description, sizeof r->desc - 1);
                 r->desc[sizeof r->desc - 1] = 0;
                 DoMethod(lst, MUIM_List_InsertSingle, (ULONG)r, MUIV_List_Insert_Bottom);
@@ -421,11 +426,42 @@ static void repo_changed(void)
     set_status("Repositories changed - click Update Catalog to fetch them.");
 }
 
+/* Is a NEWER version available for this entry than the receipt records?
+ * LOCKSTEP with gui.c pkg_has_update - the per-package Update button lights up
+ * only when there is something to do, and the same test marks the row. */
+static int pkg_has_update(const rcpt_installed *inst, size_t ninst,
+                          const aidx_entry *e)
+{
+    size_t k;
+    if (!e) return 0;
+    for (k = 0; k < ninst; k++) {
+        if (strcmp(inst[k].id, e->id) != 0) continue;
+        return aver_is_newer(e->version, inst[k].version);
+    }
+    return 0;
+}
+
 static Row *selected_row(void)
 {
     Row *r = NULL;
     DoMethod(lst, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, (ULONG)&r);
     return r;
+}
+
+/* Does the SELECTED row have an update available? */
+static int selection_has_update(void)
+{
+    rcpt_installed *inst = amipkg_inst_scratch;
+    size_t ninst;
+    aidx_index idx;
+    int yes = 0;
+    Row *r = selected_row();
+    if (!r) return 0;
+    ninst = load_installed(inst, MAX_PKGS);
+    if (arepo_load_merged(&idx) != 0) return 0;
+    yes = pkg_has_update(inst, ninst, aidx_find(&idx, r->id));
+    aidx_free(&idx);
+    return yes;
 }
 
 static int selection_installed(void)
@@ -446,6 +482,7 @@ static void update_action_state(void)
     set(bt_remove,  MUIA_Disabled, (!busy && inst) ? FALSE : TRUE);
     set(bt_run,     MUIA_Disabled, (!busy && inst) ? FALSE : TRUE);
     set(bt_adopt,   MUIA_Disabled, (!busy && r) ? FALSE : TRUE);
+    set(bt_upone,   MUIA_Disabled, (!busy && r && selection_has_update()) ? FALSE : TRUE);
     set(bt_update,  MUIA_Disabled, busy ? TRUE : FALSE);
     set(bt_upall,   MUIA_Disabled, busy ? TRUE : FALSE);
     set(bt_refresh, MUIA_Disabled, busy ? TRUE : FALSE);
@@ -934,6 +971,18 @@ static void action_install_to(void)
     FreeAslRequest(fr);
 }
 
+/* Update just the selected package. LOCKSTEP with gui.c action_update_selected. */
+static void action_update_selected(void)
+{
+    char cmd[300], verb[64];
+    Row *r = selected_row();
+    if (!r) { set_status("Select a package first."); return; }
+    snprintf(cmd, sizeof cmd, "%s upgrade %s", cli_path(), r->id);
+    snprintf(verb, sizeof verb, "Update of '%s'", r->id);
+    set_status("Updating...");
+    run_async(cmd, verb);
+}
+
 static void action_set_dir(void)
 {
     struct FileRequester *fr;
@@ -1028,6 +1077,9 @@ static int build_app(void)
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Install To...",
                     MUIA_Menuitem_Shortcut, (ULONG)"T",
                     MUIA_UserData, ID_INSTALLTO, End,
+                MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Update",
+                    MUIA_Menuitem_Shortcut, (ULONG)"G",
+                    MUIA_UserData, ID_UPDATE1, End,
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Run",
                     MUIA_UserData, ID_RUN, End,
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Adopt Existing...",
@@ -1067,6 +1119,7 @@ static int build_app(void)
                     Child, bt_update  = SimpleButton("Update _Catalog"),
                     Child, bt_check   = SimpleButton("Chec_k Updates"),
                     Child, bt_upall   = SimpleButton("Update _All"),
+                    Child, bt_upone   = SimpleButton("Up_grade Selected"),
                     Child, MUI_MakeObject(MUIO_VBar, 4),
                     Child, bt_install = SimpleButton("I_nstall"),
                     Child, bt_remove  = SimpleButton("Re_move"),
@@ -1300,6 +1353,8 @@ static int build_app(void)
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_CHECK);
     DoMethod(bt_upall,   MUIM_Notify, MUIA_Pressed, FALSE,
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_UPALL);
+    DoMethod(bt_upone,   MUIM_Notify, MUIA_Pressed, FALSE,
+             (ULONG)app, 2, MUIM_Application_ReturnID, ID_UPDATE1);
     DoMethod(bt_refresh, MUIM_Notify, MUIA_Pressed, FALSE,
              (ULONG)app, 2, MUIM_Application_ReturnID, ID_REFRESH);
     DoMethod(bt_info,    MUIM_Notify, MUIA_Pressed, FALSE,
@@ -1512,6 +1567,7 @@ static int gui_run(void)
             case ID_RUN:     action_run(); break;
             case ID_REMOVE:  action_remove(); break;
             case ID_INSTALLTO: action_install_to(); break;
+            case ID_UPDATE1: action_update_selected(); break;
             case ID_SETDIR:  action_set_dir(); break;
             case ID_ADOPT:   action_adopt(); break;
             case ID_MUIPREFS:
