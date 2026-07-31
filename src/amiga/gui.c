@@ -153,7 +153,7 @@ static struct NewMenu g_newmenu[] = {
     { NM_ITEM,  (STRPTR)"Info",          (STRPTR)"I", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Install",       (STRPTR)"N", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Install To...",  (STRPTR)"T", 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Update",         (STRPTR)"G", 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Update Selected", (STRPTR)"G", 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Adopt Existing...", NULL,    0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Submit a Package...", NULL,  0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Remove",        (STRPTR)"R", 0, 0, NULL },
@@ -456,10 +456,13 @@ static void poll_async(void)
             /* Status lines truncate - a failure ALWAYS pops the full CLI
              * message in a requester (parity with amipkg-mui). */
             if (rc != 0) {
-                static char body[280];
+                /* Sized for the longest verb + AMIPKG_NO_OUTPUT_HINT (228
+                 * chars). At 280 the tail - the actual advice - was one long
+                 * verb away from being silently snipped off. */
+                static char body[400];
                 snprintf(body, sizeof body, "%s failed (rc %ld).\n\n%s",
                          g_busy_verb, rc,
-                         line[0] ? line : "(no output - check RAM:amipkg-gui.out)");
+                         line[0] ? line : AMIPKG_NO_OUTPUT_HINT);
                 req("amipkg - operation failed", body);
             }
         }
@@ -785,7 +788,7 @@ static void action_upgrade(void)
 {
     if (g_busy) { set_status("An operation is already running."); return; }
     if (!req_confirm("Update All",
-                     "Upgrade every out-of-date package?\n\nDownloads + reinstalls the newer\n"
+                     "Update every out-of-date package?\n\nDownloads + reinstalls the newer\n"
                      "versions.", "Update|Cancel")) {
         set_status("Update cancelled."); return;
     }
@@ -1697,7 +1700,7 @@ static struct Gadget *build_gadgets(void)
             {(UBYTE *)"Update Catalog", GID_UPDATE, 0},
             {(UBYTE *)"Check Updates", GID_CHECK,   0},
             {(UBYTE *)"Update All",    GID_UPGRADE, 0},
-            {(UBYTE *)"Update",        GID_UPDATE1, 1},
+            {(UBYTE *)"Update Selected", GID_UPDATE1, 1},
             {(UBYTE *)"Info",          GID_INFO,    1},
             {(UBYTE *)"Install",       GID_INSTALL, 1},
             {(UBYTE *)"Run",           GID_RUN,     1},
@@ -1706,7 +1709,10 @@ static struct Gadget *build_gadgets(void)
             {(UBYTE *)"Refresh",       GID_REFRESH, 0},
         };
         int i;
-        for (i = 0; i < 9; i++) {
+        /* Size off the array, never a literal: adding "Update Selected" in
+         * 0.7.6 grew this to 10 while the bound stayed 9, which silently
+         * dropped the LAST button (Refresh) from the window for two releases. */
+        for (i = 0; i < (int)(sizeof btns / sizeof btns[0]); i++) {
             memset(&ng, 0, sizeof ng);
             ng.ng_LeftEdge = bx; ng.ng_TopEdge = by;
             ng.ng_Width = UI_BTN_W; ng.ng_Height = btnH;

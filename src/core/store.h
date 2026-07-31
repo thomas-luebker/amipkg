@@ -36,8 +36,23 @@ char *amipkg_data_path(const char *rel);
 
 /* THE version - single source for $VER tags, About boxes, the UA string
  * and the self-seeded receipt. Bump HERE (plus the catalog entry). */
-#define AMIPKG_VERSION "0.7.7"
-#define AMIPKG_VERDATE "30.7.2026"
+#define AMIPKG_VERSION "0.7.8"
+#define AMIPKG_VERDATE "31.7.2026"
+
+/* Shown by BOTH GUIs when a shelled-out command produced NOTHING at all.
+ * An empty output file does not mean "it failed quietly" - it means the
+ * command never started, and on a 68k box that is nearly always memory: the
+ * CLI has to load and hold the whole catalog (200+ packages is ~600 KB of
+ * entries plus the JSON) on top of a resident Workbench, MUI and dock.
+ * Reported 2026-07-31 in FS-UAE with 2.7 MB free, and it works with more RAM;
+ * the emulator .uae asks for 256 MB Z3, but FS-UAE ignores z3mem_size and
+ * needs `zorro_iii_memory` set in its OWN config. Same root cause as the
+ * AmiSSL "5.x is required" reports. */
+#define AMIPKG_NO_OUTPUT_HINT \
+    "The command produced no output, which means it could not be\n" \
+    "started at all - on 68k that is almost always free memory.\n\n" \
+    "Close some programs and retry. Under an emulator, give the\n" \
+    "machine more Fast RAM (FS-UAE: zorro_iii_memory)."
 
 #define AMIPKG_DEFAULT_INSTALLDIR "SYS:Programs"
 /* 320: the signed catalog crossed 200 packages (2026-07-27) - 128 silently

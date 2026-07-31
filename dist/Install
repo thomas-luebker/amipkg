@@ -49,7 +49,7 @@ If Not Exists db/installed.txt
 EndIf
 Search >NIL: db/installed.txt "amipkg|"
 If Warn
-  Echo "amipkg|0.7.7|1|0" >>db/installed.txt
+  Echo "amipkg|0.7.8|1|0" >>db/installed.txt
   Echo "PROGDIR:amipkg" >db/files/amipkg.files
   Echo "PROGDIR:amipkg-gui" >>db/files/amipkg.files
   Echo "PROGDIR:amipkg-gui.info" >>db/files/amipkg.files

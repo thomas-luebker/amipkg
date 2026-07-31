@@ -678,7 +678,7 @@ static void poll_async(void)
                 MUI_Request(app, win, 0, (char *)"amipkg - operation failed",
                             (char *)"_OK", "\033b%s failed (rc %ld).\033n\n\n%s",
                             (ULONG)g_busy_verb, rc,
-                            (ULONG)(line[0] ? line : "(no output - check RAM:amipkg-mui.out)"));
+                            (ULONG)(line[0] ? line : AMIPKG_NO_OUTPUT_HINT));
         }
         update_action_state();
     } else if (g_busy_ticks > 4L * 60 * 30) {   /* ~30 min watchdog */
@@ -733,7 +733,7 @@ static void action_upall(void)
 {
     if (g_busy) { set_status("An operation is already running."); return; }
     if (!req_yesno("Update All", "_Update|_Cancel",
-                   "Upgrade every out-of-date package?\n\n"
+                   "Update every out-of-date package?\n\n"
                    "Downloads + reinstalls the newer versions."))
         { set_status("Update cancelled."); return; }
     {
@@ -1083,7 +1083,7 @@ static int build_app(void)
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Install To...",
                     MUIA_Menuitem_Shortcut, (ULONG)"T",
                     MUIA_UserData, ID_INSTALLTO, End,
-                MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Update",
+                MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Update Selected",
                     MUIA_Menuitem_Shortcut, (ULONG)"G",
                     MUIA_UserData, ID_UPDATE1, End,
                 MUIA_Family_Child, MenuitemObject, MUIA_Menuitem_Title, (ULONG)"Run",
@@ -1125,7 +1125,7 @@ static int build_app(void)
                     Child, bt_update  = SimpleButton("Update _Catalog"),
                     Child, bt_check   = SimpleButton("Chec_k Updates"),
                     Child, bt_upall   = SimpleButton("Update _All"),
-                    Child, bt_upone   = SimpleButton("Up_grade Selected"),
+                    Child, bt_upone   = SimpleButton("Update _Selected"),
                     Child, MUI_MakeObject(MUIO_VBar, 4),
                     Child, bt_install = SimpleButton("I_nstall"),
                     Child, bt_remove  = SimpleButton("Re_move"),

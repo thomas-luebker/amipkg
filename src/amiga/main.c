@@ -970,11 +970,11 @@ static int install_entry(const aidx_index *idx, const aidx_entry *e)
              * here so the post-install record has exactly one entry; the FILES
              * stay put until they are either overwritten or pruned. */
             n_prev = load_files_for(e->id, prev_files, MAX_FILES);
-            printf("Upgrading %s in place (the previous version stays until "
+            printf("Updating %s in place (the previous version stays until "
                    "the new one is installed)...\n", e->id);
             receipt_forget(e->id);
         } else {
-            printf("Upgrading %s - removing the previous version...\n", e->id);
+            printf("Updating %s - removing the previous version...\n", e->id);
             cmd_remove(e->id, 1 /*force: an upgrade replaces its own files*/);
         }
     }
@@ -1227,7 +1227,7 @@ static int cmd_upgrade(const char *only_id)
         e = aidx_find(&idx, inst[i].id);
         if (!e) continue;
         if (aver_is_newer(aidx_comparable_version(e), inst[i].version)) {
-            printf("Upgrade %-20s %s -> %s\n", inst[i].id, inst[i].version, e->version);
+            printf("Update %-20s %s -> %s\n", inst[i].id, inst[i].version, e->version);
             strncpy(todo[ntodo], inst[i].id, 63); todo[ntodo][63] = '\0';
             ntodo++;
         }
@@ -1241,9 +1241,9 @@ static int cmd_upgrade(const char *only_id)
     if (ntodo == 0) { printf("Everything is up to date.\n"); return 0; }
     for (i = 0; i < ntodo; i++) {
         int r = cmd_install(todo[i]);
-        if (r != 0) { printf("amipkg: upgrade of '%s' failed (rc %d).\n", todo[i], r); rc = r; }
+        if (r != 0) { printf("amipkg: update of '%s' failed (rc %d).\n", todo[i], r); rc = r; }
     }
-    printf("Upgraded %lu package(s).\n", (unsigned long)ntodo);
+    printf("Updated %lu package(s).\n", (unsigned long)ntodo);
     return rc;
 }
 
@@ -1689,7 +1689,7 @@ static int cmd_adopt(const char *id, const char *drawer, const char *version)
             printf("Version recorded: unknown (no $VER found)"
                    " - pass it as `amipkg adopt %s <drawer> <version>`\n", id);
     }
-    printf("Future upgrades install into: %s\n", parent);
+    printf("Future updates install into: %s\n", parent);
     aidx_free(&idx);
     return 0;
 }
@@ -1806,7 +1806,7 @@ static int dispatch(int argc, char **argv)
                 if (amipkg_set_pkgdir(bare, want_dir) != 0)
                     printf("amipkg: could not remember the drawer for '%s'.\n", bare);
                 else
-                    printf("'%s' will install into %s (remembered for upgrades).\n",
+                    printf("'%s' will install into %s (remembered for updates).\n",
                            bare, want_dir);
             }
             rc = cmd_install2(argv[2], dry);
