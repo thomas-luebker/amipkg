@@ -48,6 +48,13 @@ typedef long ssize_t;
 #include <libraries/amisslmaster.h>
 #include <libraries/amissl.h>
 
+/* Signed download URLs are long. GitHub's release-asset redirect carries a
+ * signature in the query string and runs to ~915 characters; the old 512-byte
+ * buffers truncated it mid-signature, so the request went out malformed and the
+ * reply parsed as a nonsense status ("HTTP 618"). Sized with room to spare —
+ * this is a handful of bytes of BSS on a machine that has megabytes. */
+#define AMIPKG_URL_MAX 2048
+
 struct Library *SocketBase = NULL;
 struct Library *AmiSSLMasterBase = NULL;
 struct Library *AmiSSLBase = NULL;
@@ -79,21 +86,46 @@ static int amissl_available(void)
     AmiSSLMasterBase = OpenLibrary((STRPTR)"amisslmaster.library", AMISSLMASTER_MIN_VERSION);
     if (!AmiSSLMasterBase) {
         printf("amipkg: this URL needs https, and AmiSSL is not installed.\n");
-        printf("Install AmiSSL 5.x (Aminet util/libs/amissl) to enable https downloads.\n");
+        printf("Install AmiSSL (Aminet util/libs/amissl) to enable https downloads.\n");
         return 0;
     }
-    /* Request the OLDEST API level we actually use (OpenSSL 1.1 line:
-     * TLS_client_method + SNI) - AMISSL_CURRENT_VERSION would demand the
-     * very newest installed AmiSSL and rejected perfectly good 5.x
-     * installs (tester report: "installed amissl is too old"). */
-    if (!InitAmiSSLMaster(AMISSL_V11x, TRUE)) {
-        printf("amipkg: installed AmiSSL is too old - https unavailable.\n");
-        printf("Update it right from here:  amipkg install amissl\n");
-        return 0;
+
+    /* Ask for the NEWEST API level we can use and fall back down the list.
+     *
+     * Pinning one level does not work, in either direction. AMISSL_CURRENT_VERSION
+     * is baked in at build time, so it rejects a perfectly good older install
+     * ("installed amissl is too old"). But AMISSL_V11x is AMISSL_V110d — the
+     * AmiSSL v4.0-era OpenSSL 1.1 API — and AmiSSL 5.2x ships only the OpenSSL 3.x
+     * line (amissl_v5 / amissl_v362). There, InitAmiSSLMaster() accepts the request
+     * and OpenAmiSSL() then finds no 1.1 implementation to hand back, so a current,
+     * healthy AmiSSL fails with "couldn't open AmiSSL".
+     *
+     * Diagnosed on a PiStorm/Emu68 machine with amisslmaster 5.27 +
+     * amissl_v362/amissl_v5, against an A4000 with 5.22 + amissl_v111m that worked
+     * — the difference was entirely which implementation library was present, not
+     * the AmiSSL version. iBrowse and LumiFTP were fine throughout, which is what
+     * made it look like amipkg's own bug rather than a version handshake.
+     *
+     * We only use TLS_client_method, SNI and plain SSL_read/SSL_write, all of which
+     * exist in both the 1.1 and 3.x APIs, so any level here is fine. */
+    {
+        static const ULONG levels[] = {
+            AMISSL_CURRENT_VERSION,  /* whatever this build knows as newest */
+            AMISSL_V362,             /* AmiSSL 5.27 */
+            AMISSL_V352,             /* AmiSSL 5.22 */
+            AMISSL_V300,             /* first OpenSSL 3.x */
+            AMISSL_V11x,             /* OpenSSL 1.1 line, AmiSSL 4.x */
+        };
+        ULONG i;
+        for (i = 0; i < sizeof levels / sizeof levels[0]; i++) {
+            if (!InitAmiSSLMaster(levels[i], TRUE)) continue;
+            if ((AmiSSLBase = OpenAmiSSL()) != NULL) break;
+        }
     }
-    AmiSSLBase = OpenAmiSSL();
     if (!AmiSSLBase) {
-        printf("amipkg: couldn't open AmiSSL - https unavailable.\n");
+        printf("amipkg: AmiSSL is installed but no usable version was found.\n");
+        printf("amipkg needs an implementation library in LIBS:AmiSSL/ - check that\n");
+        printf("the install completed, or reinstall AmiSSL from Aminet util/libs.\n");
         return 0;
     }
     if (InitAmiSSL(AmiSSL_ErrNoPtr, (ULONG)&errno,
@@ -200,8 +232,8 @@ static int header_location(const char *header, char *out, size_t outsize)
 static int do_get(const char *url, FILE *out, long *bytes_out,
                   char *redirect, size_t redirsize, long resume_from)
 {
-    char host[128], path[512];
-    static char req[768], buf[4096];   /* off the small Shell stack */
+    char host[128], path[AMIPKG_URL_MAX];
+    static char req[AMIPKG_URL_MAX + 512], buf[4096];  /* off the small Shell stack */
     static char header[8192];
     long port;
     int tls = 0;
@@ -349,8 +381,8 @@ fail:
  * design, like everything else). Returns 0 on HTTP 200, nonzero otherwise. */
 int http_post_json(const char *url, const char *body, char *resp, size_t respsize)
 {
-    char host[128], path[512];
-    static char req[1024], buf[4096];
+    char host[128], path[AMIPKG_URL_MAX];
+    static char req[AMIPKG_URL_MAX + 512], buf[4096];
     long port;
     int tls = 0;
     struct hostent *he;
@@ -441,7 +473,7 @@ fail:
 
 int http_get(const char *url, FILE *out, long *bytes_out)
 {
-    static char current[512], redirect[512];
+    static char current[AMIPKG_URL_MAX], redirect[AMIPKG_URL_MAX];
     int hops, rc;
     strncpy(current, url, sizeof current - 1);
     current[sizeof current - 1] = '\0';
@@ -464,7 +496,7 @@ int http_get(const char *url, FILE *out, long *bytes_out)
  * Follows up to 3 redirects. 0 = complete body on disk. */
 int http_get_file(const char *url, const char *path, long *bytes_out)
 {
-    static char current[512], redirect[512];
+    static char current[AMIPKG_URL_MAX], redirect[AMIPKG_URL_MAX];
     long have = 0, got = 0;
     int hops, rc;
     FILE *out;
