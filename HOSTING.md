@@ -236,6 +236,26 @@ and `PACKAGING.md` there walks through writing an entry.
 
 ---
 
+## Getting your repo listed
+
+Once it is up and signed, add it to the directory of known repositories so
+people can find it:
+
+**https://github.com/thomas-luebker/amiga-pkg/blob/main/REPOSITORIES.md**
+
+One pull request with the name, URL, key and a line about what is in it. A
+listing is a phone book entry, not an endorsement — users still pin your key
+themselves, and your repo is only ever verified against it.
+
+Before you submit, check the PUBLISHED files rather than your local copies:
+
+```
+amipkg-repo-sign verify <your-public-key> packages.json
+```
+
+The usual failure is a catalog that was updated without being re-signed, or a
+key that was rotated after it was shared.
+
 ## Submitting to the official repo instead
 
 If you want your package available to everyone by default, you do not need your

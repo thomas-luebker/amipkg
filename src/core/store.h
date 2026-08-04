@@ -36,8 +36,8 @@ char *amipkg_data_path(const char *rel);
 
 /* THE version - single source for $VER tags, About boxes, the UA string
  * and the self-seeded receipt. Bump HERE (plus the catalog entry). */
-#define AMIPKG_VERSION "0.7.8"
-#define AMIPKG_VERDATE "31.7.2026"
+#define AMIPKG_VERSION "0.7.9"
+#define AMIPKG_VERDATE "4.8.2026"
 
 /* Shown by BOTH GUIs when a shelled-out command produced NOTHING at all.
  * An empty output file does not mean "it failed quietly" - it means the
